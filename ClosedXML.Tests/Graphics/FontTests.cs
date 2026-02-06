@@ -1,5 +1,6 @@
 using System;
 using ClosedXML.Excel;
+using ClosedXML.Graphic.SixLabors;
 using ClosedXML.Graphics;
 using NUnit.Framework;
 
@@ -8,7 +9,7 @@ namespace ClosedXML.Tests.Graphics
     [TestFixture]
     public class FontTests
     {
-        private readonly IXLGraphicEngine _engine = DefaultGraphicEngine.Instance.Value;
+        private readonly IXLGraphicEngine _engine = SixLaborsGraphicEngine.Instance.Value;
 
         [TestCase]
         public void CalculatedTextWidth()
@@ -61,7 +62,7 @@ namespace ClosedXML.Tests.Graphics
         public void UseEmbeddedFontWhenFallbackFontIsNotPresent()
         {
             var nonExistentFont = new DummyFont("SomeNonExistentFont", 11);
-            var engine = new DefaultGraphicEngine("NonExistentFallbackFont");
+            var engine = new SixLaborsGraphicEngine("NonExistentFallbackFont");
             Span<int> text = stackalloc int[1] { '8' };
 
             var box = engine.GetGlyphBox(text, nonExistentFont, new Dpi(96, 96));
@@ -74,7 +75,7 @@ namespace ClosedXML.Tests.Graphics
         public void CanSpecifyFallbackFontWithoutFileSystem()
         {
             using var fallbackFontStream = TestHelper.GetStreamFromResource("Fonts.TestFontA.ttf");
-            var engine = DefaultGraphicEngine.CreateOnlyWithFonts(fallbackFontStream);
+            var engine = SixLaborsGraphicEngine.CreateOnlyWithFonts(fallbackFontStream);
 
             var nonExistentFont = new DummyFont("Nonexistent Font", 20);
             var widthOfLetterA = engine.GetTextWidth("A", nonExistentFont, 120);
@@ -88,7 +89,7 @@ namespace ClosedXML.Tests.Graphics
         {
             using var fallbackFontStream = TestHelper.GetStreamFromResource("Fonts.TestFontA.ttf");
             var fontBStream = TestHelper.GetStreamFromResource("Fonts.TestFontB.ttf");
-            var engine = DefaultGraphicEngine.CreateOnlyWithFonts(fallbackFontStream, fontBStream);
+            var engine = SixLaborsGraphicEngine.CreateOnlyWithFonts(fallbackFontStream, fontBStream);
 
             var widthOfLetterB = engine.GetTextWidth("B", new DummyFont("TestFontB", 30), 96);
 

@@ -15,7 +15,7 @@ namespace ClosedXML.Excel
         /// <summary>
         /// A graphics engine that will be used for workbooks without explicitly set engine.
         /// </summary>
-        public static IXLGraphicEngine? DefaultGraphicEngine { internal get; set; }
+        public static IXLGraphicEngine? DefaultGraphicEngine { internal get; set; } = ApproximateGraphicEngine.Instance;
 
         /// <summary>
         /// Should all formulas in a workbook be recalculated during load? Default value is <c>false</c>.

@@ -795,7 +795,7 @@ namespace ClosedXML.Excel
             DpiX = loadOptions.Dpi.X;
             DpiY = loadOptions.Dpi.Y;
             StrictAttributeParsing = loadOptions.StrictAttributeParsing;
-            GraphicEngine = loadOptions.GraphicEngine ?? LoadOptions.DefaultGraphicEngine ?? DefaultGraphicEngine.Instance.Value;
+            GraphicEngine = loadOptions.GraphicEngine ?? LoadOptions.DefaultGraphicEngine ?? ApproximateGraphicEngine.Instance;
             Protection = new XLWorkbookProtection(DefaultProtectionAlgorithm);
             DefaultRowHeight = 15;
             DefaultColumnWidth = 8.43;

@@ -1,6 +1,7 @@
 using System.Drawing;
 using System.Reflection;
 using ClosedXML.Excel.Drawings;
+using ClosedXML.Graphic.SixLabors;
 using ClosedXML.Graphics;
 using NUnit.Framework;
 
@@ -122,7 +123,7 @@ namespace ClosedXML.Tests.Graphics
         private static void AssertImage(string imageName, XLPictureFormat expectedFormat, Size expectedPxSize, Size expectedHiMetricSize, double expectedDpiX, double expectedDpiY)
         {
             using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"ClosedXML.Tests.Resource.Images.{imageName}");
-            var info = DefaultGraphicEngine.Instance.Value.GetPictureInfo(stream, XLPictureFormat.Unknown);
+            var info = SixLaborsGraphicEngine.Instance.Value.GetPictureInfo(stream, XLPictureFormat.Unknown);
 
             Assert.AreEqual(expectedFormat, info.Format);
             Assert.AreEqual(expectedPxSize, info.SizePx);

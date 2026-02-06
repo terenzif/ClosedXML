@@ -20,10 +20,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Graphics\Fonts\CarlitoBare-Bold.ttf" />
-    <EmbeddedResource Include="Graphics\Fonts\CarlitoBare-BoldItalic.ttf" />
-    <EmbeddedResource Include="Graphics\Fonts\CarlitoBare-Italic.ttf" />
-    <EmbeddedResource Include="Graphics\Fonts\CarlitoBare-Regular.ttf" />
   </ItemGroup>
 
   <ItemGroup>
@@ -45,7 +41,6 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="RBush.Signed" Version="4.0.0" />
-    <PackageReference Include="SixLabors.Fonts" Version="1.0.0" />
     <PackageReference Include="ClosedXML.Parser" Version="2.0.0-preview1" />
   </ItemGroup>
 
