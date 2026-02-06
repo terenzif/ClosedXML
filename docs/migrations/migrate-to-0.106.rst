@@ -21,6 +21,13 @@ The number format setters (```IXLNumberFormatBase.NumberFormatId```,
 now throw an ```ArgumentOutOfRangeException``` when supplied number format id is
 not a predefined format id from ```XLPredefinedFormat```.
 
+************
+IXLAlignment
+************
+
+The ``IXLAlignment.TextRotation`` now throws ``ArgumentOutOfRangeException`` on invalid rotation
+instead of original ``ArgumentException``.
+
 *************
 IXLWorksheets
 *************
@@ -38,3 +45,17 @@ Defined names
 
 A property setter ``IXLDefinedName.RefersTo`` now throws an ``ArgumentException``
 when trying to set an empty/whitespace-only value.
+
+************
+IXLRangeBase
+************
+
+An obsolete method ``IXLRangeBase.SetDataValidation`` has been removed. Use ``GetDataValidation()``
+to access the existing rule, or ``CreateDataValidation()`` to create a new one.
+
+*******
+IXLCell
+*******
+
+An obsolete method ``IXLRangeBase.SetDataValidation`` has been removed. Use ``GetDataValidation()``
+to access the existing rule, or ``CreateDataValidation()`` to create a new one.

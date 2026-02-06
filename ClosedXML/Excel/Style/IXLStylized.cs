@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace ClosedXML.Excel
 {
@@ -33,14 +34,14 @@ namespace ClosedXML.Excel
         /// <see cref="XLCells"/>, it should return range for each element in the collection.
         /// </para>
         /// </summary>
-        IXLRanges RangesUsed { get; }
+        IEnumerable<IXLRange> RangesUsed { get; }
 
         /// <summary>
         /// Style value representing the current style of the stylized element.
         /// The value is updated when style is modified (<see cref="XLStyleValue"/>
         /// is immutable).
         /// </summary>
-        XLStyleValue StyleValue { get; }
+        XLStyleValue StyleValue { get; set; }
 
         /// <summary>
         /// A callback method called when <see cref="Style"/> is changed. It should update

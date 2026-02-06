@@ -9,34 +9,33 @@ using ClosedXML.Excel.CalcEngine.Visitors;
 
 namespace ClosedXML.Excel
 {
-    internal abstract class XLRangeBase : XLStylizedBase, IXLRangeBase, IXLStylized
+    internal abstract class XLRangeBase :
+#if !STYLES_REWORK
+        XLStylizedBase, IXLStylized,
+#endif
+        IXLRangeBase
     {
-        #region Fields
-
         private XLSortElements _sortRows;
         private XLSortElements _sortColumns;
-
-        #endregion Fields
-
-        protected IXLStyle GetStyle()
-        {
-            return Style;
-        }
-
-        #region Constructor
-
         private static Int32 IdCounter = 0;
         private readonly Int32 Id;
 
+#if STYLES_REWORK
+        protected XLRangeBase(XLRangeAddress rangeAddress)
+#else
         protected XLRangeBase(XLRangeAddress rangeAddress, XLStyleValue styleValue)
             : base(styleValue)
+#endif
         {
             Id = ++IdCounter;
 
             _rangeAddress = rangeAddress;
         }
 
-        #endregion Constructor
+        /// <summary>
+        /// Get format API object tailored to the range type.
+        /// </summary>
+        internal abstract XLCellFormat Format { get; }
 
         protected virtual void OnRangeAddressChanged(XLRangeAddress oldAddress, XLRangeAddress newAddress)
         {
@@ -77,12 +76,14 @@ namespace ClosedXML.Excel
             }
         }
 
-        public IXLDataValidation CreateDataValidation()
+        IXLDataValidation IXLRangeBase.CreateDataValidation()
         {
-            var newRange = AsRange();
-            var dataValidation = new XLDataValidation(newRange);
-            Worksheet.DataValidations.Add(dataValidation);
-            return dataValidation;
+            return CreateDataValidation();
+        }
+
+        internal XLDataValidation CreateDataValidation()
+        {
+            return Worksheet.DataValidations.Create(SheetRange);
         }
 
         public IXLDataValidation GetDataValidation()
@@ -92,6 +93,14 @@ namespace ClosedXML.Excel
         }
 
         #region IXLRangeBase Members
+
+#if STYLES_REWORK
+        public IXLStyle Style
+        {
+            get => Format;
+            set => Format.SetStyle(value);
+        }
+#endif
 
         IXLRangeAddress IXLAddressable.RangeAddress
         {
@@ -177,16 +186,10 @@ namespace ClosedXML.Excel
 
         #endregion IXLRangeBase Members
 
+#if !STYLES_REWORK
         #region IXLStylized Members
 
-        public override IXLRanges RangesUsed
-        {
-            get
-            {
-                var retVal = new XLRanges { AsRange() };
-                return retVal;
-            }
-        }
+        public override IEnumerable<IXLRange> RangesUsed => new XLRanges(Worksheet) { AsRange() };
 
         protected override IEnumerable<XLStylizedBase> Children
         {
@@ -198,7 +201,7 @@ namespace ClosedXML.Excel
         }
 
         #endregion IXLStylized Members
-
+#endif
         #endregion Public properties
 
         #region IXLRangeBase Members
@@ -271,7 +274,7 @@ namespace ClosedXML.Excel
 
         public XLCells Cells(Boolean usedCellsOnly, XLCellsUsedOptions options)
         {
-            var cells = new XLCells(usedCellsOnly, options) { RangeAddress };
+            var cells = new XLCells(Worksheet, usedCellsOnly, options) { RangeAddress };
             return cells;
         }
 
@@ -282,7 +285,7 @@ namespace ClosedXML.Excel
 
         public IXLCells Cells(Func<IXLCell, Boolean> predicate)
         {
-            var cells = new XLCells(false, XLCellsUsedOptions.AllContents, predicate) { RangeAddress };
+            var cells = new XLCells(Worksheet, false, XLCellsUsedOptions.AllContents, predicate) { RangeAddress };
             return cells;
         }
 
@@ -826,7 +829,6 @@ namespace ClosedXML.Excel
                 throw new ArgumentException("The address refers to a different worksheet.", nameof(newLastCellAddress));
 
             var newRangeAddress = new XLRangeAddress(newFirstCellAddress, newLastCellAddress);
-            var xlRangeParameters = new XLRangeParameters(newRangeAddress, Style);
             if (
                 newFirstCellAddress.RowNumber < RangeAddress.FirstAddress.RowNumber
                 || newFirstCellAddress.RowNumber > RangeAddress.LastAddress.RowNumber
@@ -844,11 +846,11 @@ namespace ClosedXML.Excel
             }
 
             if (newFirstCellAddress.Worksheet != null)
-                return newFirstCellAddress.Worksheet.GetOrCreateRange(xlRangeParameters);
+                return newFirstCellAddress.Worksheet.GetOrCreateRange(newRangeAddress);
             else if (Worksheet != null)
-                return Worksheet.GetOrCreateRange(xlRangeParameters);
+                return Worksheet.GetOrCreateRange(newRangeAddress);
             else
-                return new XLRange(xlRangeParameters);
+                return new XLRange(newRangeAddress, Style);
         }
 
         public XLRange Range(String firstCellAddress, String lastCellAddress)
@@ -917,7 +919,7 @@ namespace ClosedXML.Excel
 
         public virtual XLRanges Ranges(String ranges)
         {
-            var retVal = new XLRanges();
+            var retVal = new XLRanges(Worksheet);
             var rangePairs = ranges.Split(',');
             foreach (string pair in rangePairs)
                 retVal.Add(Range(pair.Trim()));
@@ -926,7 +928,7 @@ namespace ClosedXML.Excel
 
         public IXLRanges Ranges(params String[] ranges)
         {
-            var retVal = new XLRanges();
+            var retVal = new XLRanges(Worksheet);
             foreach (string pair in ranges)
                 retVal.Add(Range(pair));
             return retVal;
@@ -948,19 +950,19 @@ namespace ClosedXML.Excel
 
         public IXLCells CellsUsed(XLCellsUsedOptions options)
         {
-            var cells = new XLCells(true, options) { RangeAddress };
+            var cells = new XLCells(Worksheet, true, options) { RangeAddress };
             return cells;
         }
 
         public IXLCells CellsUsed(Func<IXLCell, Boolean> predicate)
         {
-            var cells = new XLCells(true, XLCellsUsedOptions.AllContents, predicate) { RangeAddress };
+            var cells = new XLCells(Worksheet, true, XLCellsUsedOptions.AllContents, predicate) { RangeAddress };
             return cells;
         }
 
         public IXLCells CellsUsed(XLCellsUsedOptions options, Func<IXLCell, Boolean> predicate)
         {
-            var cells = new XLCells(true, options, predicate) { RangeAddress };
+            var cells = new XLCells(Worksheet, true, options, predicate) { RangeAddress };
             return cells;
         }
 
@@ -1764,36 +1766,9 @@ namespace ClosedXML.Excel
             return Worksheet.RangeColumn(new XLRangeAddress(firstCellAddress, lastCellAddress));
         }
 
-        [Obsolete("Use GetDataValidation() to access the existing rule, or CreateDataValidation() to create a new one.")]
-        public IXLDataValidation SetDataValidation()
-        {
-            var existingValidation = GetDataValidation();
-            if (existingValidation != null && existingValidation.Ranges.Any(r => r == this))
-                return existingValidation;
-
-            IXLDataValidation dataValidationToCopy = Worksheet.DataValidations.GetAllInRange(RangeAddress)
-                .FirstOrDefault();
-
-            var newRange = AsRange();
-            var dataValidation = new XLDataValidation(newRange);
-            if (dataValidationToCopy != null)
-                dataValidation.CopyFrom(dataValidationToCopy);
-
-            Worksheet.DataValidations.Add(dataValidation);
-            return dataValidation;
-        }
-
         public IXLConditionalFormat AddConditionalFormat()
         {
-            var cf = new XLConditionalFormat(AsRange());
-            Worksheet.ConditionalFormats.Add(cf);
-            return cf;
-        }
-
-        internal IXLConditionalFormat AddConditionalFormat(IXLConditionalFormat source)
-        {
-            var cf = new XLConditionalFormat(AsRange());
-            cf.CopyFrom(source);
+            var cf = new XLConditionalFormat(Worksheet, AsRange());
             Worksheet.ConditionalFormats.Add(cf);
             return cf;
         }
@@ -1877,7 +1852,7 @@ namespace ClosedXML.Excel
 
         public IXLCells SurroundingCells(Func<IXLCell, Boolean> predicate = null)
         {
-            var cells = new XLCells(false, XLCellsUsedOptions.AllContents, predicate);
+            var cells = new XLCells(Worksheet, false, XLCellsUsedOptions.AllContents, predicate);
             this.Grow().Cells(c => !this.Contains(c)).ForEach(c => cells.Add(c as XLCell));
             return cells;
         }
@@ -1887,7 +1862,7 @@ namespace ClosedXML.Excel
             if (otherRange == null)
                 return this.Cells(thisRangePredicate);
 
-            var cells = new XLCells(false, XLCellsUsedOptions.AllContents);
+            var cells = new XLCells(Worksheet, false, XLCellsUsedOptions.AllContents);
             if (!this.Worksheet.Equals(otherRange.Worksheet))
                 return cells;
 
@@ -1903,7 +1878,7 @@ namespace ClosedXML.Excel
             if (otherRange == null)
                 return this.Cells(thisRangePredicate);
 
-            var cells = new XLCells(false, XLCellsUsedOptions.AllContents);
+            var cells = new XLCells(Worksheet, false, XLCellsUsedOptions.AllContents);
             if (!this.Worksheet.Equals(otherRange.Worksheet))
                 return cells;
 

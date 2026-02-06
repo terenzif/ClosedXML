@@ -1,22 +1,17 @@
+using System;
 using System.Collections.Generic;
 
 namespace ClosedXML.Excel
 {
-    internal class XLStylizedEmpty : XLStylizedBase, IXLStylized
+    internal class XLStylizedEmpty : XLStylizedBase
     {
         public XLStylizedEmpty(IXLStyle? defaultStyle)
             : base((defaultStyle as XLStyle)?.Value)
         {
         }
 
-        public override IXLRanges RangesUsed
-        {
-            get { return new XLRanges(); }
-        }
+        public override IEnumerable<IXLRange> RangesUsed => Array.Empty<IXLRange>();
 
-        protected override IEnumerable<XLStylizedBase> Children
-        {
-            get { yield break; }
-        }
+        protected override IEnumerable<XLStylizedBase> Children => Array.Empty<XLStylizedBase>();
     }
 }

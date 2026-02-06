@@ -17,7 +17,7 @@ internal readonly record struct XLFontName : IEquatable<string>
     {
         // Spec says at most 31 chars, Excel also tries to repair workbook when value is longer.
         if (string.IsNullOrWhiteSpace(text) || text.Length > 31)
-            throw new ArgumentException(nameof(text));
+            throw new ArgumentException("Font name can't be empty and must be less than 32 characters long.", nameof(text));
 
         Text = text;
     }
@@ -39,6 +39,5 @@ internal readonly record struct XLFontName : IEquatable<string>
         return Equals(other.Text);
     }
 
-    [return: NotNullIfNotNull(nameof(text))]
-    public static implicit operator XLFontName?(string? text) => !string.IsNullOrWhiteSpace(text) ? new XLFontName(text) : null;
+    public static implicit operator XLFontName(string text) => new(text);
 }

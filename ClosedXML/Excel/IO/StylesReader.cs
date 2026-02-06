@@ -5,8 +5,8 @@ using System.Linq;
 using ClosedXML.Excel.Formatting;
 using ClosedXML.IO;
 using ClosedXML.Utils;
-using TS = ClosedXML.Excel.Formatting.XLTableStyleRegionValues;
 using PTS = ClosedXML.Excel.Formatting.XLPivotStyleRegionValues;
+using TS = ClosedXML.Excel.Formatting.XLTableStyleRegionValues;
 
 namespace ClosedXML.Excel.IO;
 
@@ -16,6 +16,14 @@ internal partial class StylesReader
     private readonly XLWorkbookStyles _styles;
     private readonly string _ns = OpenXmlConst.Main2006SsNs;
     private readonly SequentialNameGenerator _styleNameGenerator = new("Style ", 1);
+
+    // Format components to use when not specified in xf record
+    private readonly string _defaultNumberFormat;
+    private readonly XLFillFormatValue _defaultFillFormat;
+    private readonly XLBorderFormatValue _defaultBorderFormat;
+    private readonly XLAlignmentFormatValue _defaultAlignmentFormat;
+    private readonly XLProtectionFormatValue _defaultProtectionFormat;
+    private XLFontFormatValue _defaultFontFormat;
 
     // Currently read CT_TableStyle element
     private Dictionary<TS, (XLDxfValue Dxf, int BandSize)> _currentTableStyle = new();
@@ -30,6 +38,14 @@ internal partial class StylesReader
     {
         _reader = reader;
         _styles = styles;
+
+        // Set initial fallback values if part is empty
+        _defaultNumberFormat = styles.DefaultNormalStyle.NumberFormat;
+        _defaultFontFormat = styles.DefaultNormalStyle.Font;
+        _defaultFillFormat = styles.DefaultNormalStyle.Fill;
+        _defaultBorderFormat = styles.DefaultNormalStyle.Border;
+        _defaultAlignmentFormat = styles.DefaultNormalStyle.Alignment;
+        _defaultProtectionFormat = styles.DefaultNormalStyle.Protection;
     }
 
     internal void Load()
@@ -42,23 +58,37 @@ internal partial class StylesReader
 
     private void LoadDefaultFormat()
     {
-        // Normal style is technically optional.
-        var normalStyle = _styles.CellStyles.Select(x => x.Value).SingleOrDefault(x => x.BuiltInStyle == BuiltInStyleValues.Normal);
+        // Normal style is technically optional, but it's basically a requirement for any sane work.
+        var (styleId, normalStyle) = _styles.CellStyles.SingleOrDefault(x => x.Value.BuiltInStyle == BuiltInStyleValues.Normal);
         if (normalStyle is null)
-            return;
-
-        // Default format has mostly unchangeable values regardless of workbook styles, but it
-        // does adjust font name and size from normal style on load.
-        var defaultFontName = normalStyle.Font?.Name ?? _styles.DefaultFormat.Font?.Name;
-        var defaultFontSize = normalStyle.Font?.Size ?? _styles.DefaultFormat.Font?.Size;
-        _styles.DefaultFormat = _styles.DefaultFormat with
         {
-            Font = _styles.DefaultFormat!.Font! with
-            {
-                Name = defaultFontName,
-                Size = defaultFontSize
-            }
-        };
+            styleId = _styles.CellStyles.Count;
+            normalStyle = _styles.DefaultNormalStyle;
+
+            // Number format collection already contains all predefined numFmts, so it can only be user-defined
+            if (!_styles.NumberFormats.ContainsValue(normalStyle.NumberFormat))
+                _styles.AddUserDefinedNumberFormat(normalStyle.NumberFormat);
+
+            if (!_styles.Fonts.ContainsValue(normalStyle.Font))
+                _styles.AddFontFormat(normalStyle.Font);
+
+            if (!_styles.Fills.ContainsValue(normalStyle.Fill))
+                _styles.AddFillFormat(normalStyle.Fill);
+
+            if (!_styles.Borders.ContainsValue(normalStyle.Border))
+                _styles.AddBorderFormat(normalStyle.Border);
+
+            _styles.AddCellStyle(styleId.Value, normalStyle);
+        }
+
+        // Ensure there is a default format.
+        if (!_styles.CellFormats.TryGetValue(0, out var defaultFormat))
+        {
+            defaultFormat = XLCellFormatValue.FromStyle(styleId, normalStyle);
+            _styles.AddFormat(defaultFormat);
+        }
+
+        _styles.DefaultFormat = defaultFormat;
     }
 
     private void ParseStylesheet(string elementName)
@@ -78,14 +108,37 @@ internal partial class StylesReader
         {
             ParseFonts("fonts");
         }
+
+        if (_styles.Fonts.Count == 0)
+        {
+            _styles.AddFontFormat(_defaultFontFormat);
+        }
+        else
+        {
+            _defaultFontFormat = _styles.Fonts[0];
+        }
+
         if (_reader.TryOpen("fills", _ns))
         {
             ParseFills("fills");
         }
+
+        // Default fill is always none, should be at index 0.
+        if (!_styles.Fills.ContainsValue(_defaultFillFormat))
+        {
+            _styles.AddFillFormat(_defaultFillFormat);
+        }
+
         if (_reader.TryOpen("borders", _ns))
         {
             ParseBorders("borders");
         }
+
+        if (!_styles.Borders.ContainsValue(_defaultBorderFormat))
+        {
+            _styles.AddBorderFormat(_defaultBorderFormat);
+        }
+
         if (_reader.TryOpen("cellStyleXfs", _ns))
         {
             ParseCellStyleXfs("cellStyleXfs");
@@ -209,7 +262,7 @@ internal partial class StylesReader
         }
     }
 
-    private XLFontFormatValue ParseFont(string elementName)
+    private XLDifferentialFontValue ParseFont(string elementName)
     {
         // Font is mostly buggy specification. Excel basically chokes on anything but a sequence,
         // but standard requires an unbound choice where elements can repeat.
@@ -303,7 +356,7 @@ internal partial class StylesReader
             }
         }
 
-        var fontFormat = new XLFontFormatValue
+        var fontFormat = new XLDifferentialFontValue
         {
             Name = fontName,
             Charset = fontCharset,
@@ -321,8 +374,49 @@ internal partial class StylesReader
             VerticalAlignment = fontVerticalAlignment,
             Scheme = fontScheme,
         };
-        _styles.AddFontFormat(fontFormat);
         return fontFormat;
+    }
+
+    // ParseFont is shared between <fonts> table and <dxf> elements. Once the <fonts> table is read,
+    // register collected fonts to the workbook styles.
+    partial void OnFontsParsed(List<XLDifferentialFontValue> font, uint? count)
+    {
+        var defaultFont = XLFontFormatValue.Default;
+
+        // Excel probably screwed up. Default name and size should likely be font of default
+        // format, but it is always taken from font zero (if font zero defines name/size).
+        if (font.Count > 0)
+        {
+            var fontZero = font[0];
+            defaultFont = defaultFont with
+            {
+                Name = fontZero.Name ?? defaultFont.Name,
+                Size = fontZero.Size ?? defaultFont.Size,
+            };
+        }
+
+        foreach (var fontProps in font)
+        {
+            var fontFormat = new XLFontFormatValue
+            {
+                Name = fontProps.Name ?? defaultFont.Name,
+                Size = fontProps.Size ?? defaultFont.Size,
+                Charset = fontProps.Charset ?? defaultFont.Charset,
+                Family = fontProps.Family ?? defaultFont.Family,
+                Bold = fontProps.Bold ?? defaultFont.Bold,
+                Italic = fontProps.Italic ?? defaultFont.Italic,
+                Strikethrough = fontProps.Strikethrough ?? defaultFont.Strikethrough,
+                Outline = fontProps.Outline ?? defaultFont.Outline,
+                Shadow = fontProps.Shadow ?? defaultFont.Shadow,
+                Condense = fontProps.Condense ?? defaultFont.Condense,
+                Extend = fontProps.Extend ?? defaultFont.Extend,
+                Color = fontProps.Color ?? defaultFont.Color,
+                Underline = fontProps.Underline ?? defaultFont.Underline,
+                VerticalAlignment = fontProps.VerticalAlignment ?? defaultFont.VerticalAlignment,
+                Scheme = fontProps.Scheme ?? defaultFont.Scheme,
+            };
+            _styles.AddFontFormat(fontFormat);
+        }
     }
 
     private XLFillFormatValue OnFillParsed(XLFillFormatValue? patternFill, XLFillFormatValue? gradientFill)
@@ -415,13 +509,13 @@ internal partial class StylesReader
     {
         var borderFormat = new XLBorderFormatValue
         {
-            Left = left,
-            Right = right,
-            Top = top,
-            Bottom = bottom,
-            Diagonal = diagonal,
-            Vertical = vertical,
-            Horizontal = horizontal,
+            Left = left ?? XLBorderLine.None,
+            Right = right ?? XLBorderLine.None,
+            Top = top ?? XLBorderLine.None,
+            Bottom = bottom ?? XLBorderLine.None,
+            Diagonal = diagonal ?? XLBorderLine.None,
+            Vertical = vertical ?? XLBorderLine.None,
+            Horizontal = horizontal ?? XLBorderLine.None,
             DiagonalUp = diagonalUp ?? false, // OI-29500: Excel uses false as default value
             DiagonalDown = diagonalDown ?? false, // OI-29500: Excel uses false as default value
             Outline = outline
@@ -443,13 +537,13 @@ internal partial class StylesReader
     private (XLCellFormatValue Format, int? CellStyleXfId) OnXfParsed(XLAlignmentFormatValue? alignment, XLProtectionFormatValue? protection, uint? numFmtId, uint? fontId, uint? fillId, uint? borderId, uint? xfId, bool quotePrefix, bool pivotButton, bool? applyNumberFormat, bool? applyFont, bool? applyFill, bool? applyBorder, bool? applyAlignment, bool? applyProtection)
     {
         // When xf is parsed, all number formats, fonts, fills and borders should already be read.
-        string? numberFormat = null;
-        if (numFmtId is not null)
-            numberFormat = _styles.NumberFormats.GetValueOrDefault(checked((int)numFmtId));
+        var numberFormat = _defaultNumberFormat;
+        if (numFmtId is not null && _styles.NumberFormats.TryGetValue(checked((int)numFmtId), out var numFmt))
+            numberFormat = numFmt;
 
-        var font = fontId is not null ? _styles.Fonts[checked((int)fontId)] : null;
-        var fill = fillId is not null ? _styles.Fills[checked((int)fillId)] : null;
-        var border = borderId is not null ? _styles.Borders[checked((int)borderId)] : null;
+        var font = fontId is not null ? _styles.Fonts[checked((int)fontId)] : _defaultFontFormat;
+        var fill = fillId is not null ? _styles.Fills[checked((int)fillId)] : _defaultFillFormat;
+        var border = borderId is not null ? _styles.Borders[checked((int)borderId)] : _defaultBorderFormat;
 
         // Excel doesn't actually use the apply* for xf, but at least it writes as if it did. It
         // actually checks whether the id is same for xf and a style and if it is, the aspect
@@ -484,8 +578,8 @@ internal partial class StylesReader
         var format = new XLCellFormatValue
         {
             NumberFormat = numberFormat,
-            Alignment = alignment,
-            Protection = protection,
+            Alignment = alignment ?? _defaultAlignmentFormat,
+            Protection = protection ?? _defaultProtectionFormat,
             Font = font,
             Fill = fill,
             Border = border,
@@ -601,12 +695,12 @@ internal partial class StylesReader
         };
     }
 
-    partial void OnDxfParsed(XLFontFormatValue? font, (int NumFmtId, string FormatCode)? numFmt, XLFillFormatValue? fill, XLAlignmentFormatValue? alignment, XLBorderFormatValue? border, XLProtectionFormatValue? protection)
+    partial void OnDxfParsed(XLDifferentialFontValue? font, (int NumFmtId, string FormatCode)? numFmt, XLFillFormatValue? fill, XLAlignmentFormatValue? alignment, XLBorderFormatValue? border, XLProtectionFormatValue? protection)
     {
         var dxf = new XLDxfValue
         {
             NumberFormat = numFmt?.FormatCode,
-            Font = font,
+            Font = font ?? XLDifferentialFontValue.Empty,
             Fill = fill,
             Alignment = alignment,
             Border = border,

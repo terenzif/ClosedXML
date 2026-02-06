@@ -3,12 +3,21 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using ClosedXML.Excel.Formatting;
 
 namespace ClosedXML.Excel
 {
-    internal class XLConditionalFormat : XLStylizedBase, IXLConditionalFormat, IXLStylized
+    internal class XLConditionalFormat :
+#if STYLES_REWORK
+        IXLDxfContainer,
+#else
+        XLStylizedBase,
+#endif
+        IXLConditionalFormat
     {
-        private sealed class FullEqualityComparer : IEqualityComparer<IXLConditionalFormat>
+        private readonly XLWorksheet _worksheet;
+
+        private sealed class FullEqualityComparer : IEqualityComparer<XLConditionalFormat>
         {
             private readonly bool _compareRange;
             private readonly DictionaryComparer<int, XLColor> _colorsComparer = new DictionaryComparer<int, XLColor>();
@@ -21,10 +30,8 @@ namespace ClosedXML.Excel
                 _compareRange = compareRange;
             }
 
-            public bool Equals(IXLConditionalFormat x, IXLConditionalFormat y)
+            public bool Equals(XLConditionalFormat xx, XLConditionalFormat yy)
             {
-                var xx = (XLConditionalFormat)x;
-                var yy = (XLConditionalFormat)y;
                 if (ReferenceEquals(xx, yy)) return true;
                 if (ReferenceEquals(xx, null)) return false;
                 if (ReferenceEquals(yy, null)) return false;
@@ -32,12 +39,15 @@ namespace ClosedXML.Excel
 
                 var xxValues = xx.Values.Values.Where(v => v == null || !v.IsFormula).Select(v => v?.Value);
                 var yyValues = yy.Values.Values.Where(v => v == null || !v.IsFormula).Select(v => v?.Value);
-                var xxFormulas = x.Ranges.Count > 0 ? xx.Values.Values.Where(v => v != null && v.IsFormula).Select(f => ((XLCell)x.Ranges.First().FirstCell()).GetFormulaR1C1(f.Value)) : null;
-                var yyFormulas = y.Ranges.Count > 0 ? yy.Values.Values.Where(v => v != null && v.IsFormula).Select(f => ((XLCell)y.Ranges.First().FirstCell()).GetFormulaR1C1(f.Value)) : null;
-
+                var xxFormulas = xx.Ranges.Count > 0 ? xx.Values.Values.Where(v => v != null && v.IsFormula).Select(f => ((XLCell)xx.Ranges.First().FirstCell()).GetFormulaR1C1(f.Value)) : null;
+                var yyFormulas = yy.Ranges.Count > 0 ? yy.Values.Values.Where(v => v != null && v.IsFormula).Select(f => ((XLCell)yy.Ranges.First().FirstCell()).GetFormulaR1C1(f.Value)) : null;
+#if STYLES_REWORK
+                var xStyle = xx.Format;
+                var yStyle = yy.Format;
+#else
                 var xStyle = xx.StyleValue;
                 var yStyle = yy.StyleValue;
-
+#endif
                 return Equals(xStyle, yStyle)
                     && xx.CopyDefaultModify == yy.CopyDefaultModify
                     && xx.ConditionalFormatType == yy.ConditionalFormatType
@@ -58,9 +68,9 @@ namespace ClosedXML.Excel
                     && (!_compareRange || XLRanges.Equals(xx.Ranges, yy.Ranges));
             }
 
-            public int GetHashCode(IXLConditionalFormat obj)
+            public int GetHashCode(XLConditionalFormat obj)
             {
-                var xx = (XLConditionalFormat)obj;
+                var xx = obj;
                 var xStyle = ((XLStyle)obj.Style).Value;
                 var xValues = xx.Values.Values.Where(v => !v.IsFormula).Select(v => v.Value);
                 if (obj.Ranges.Count > 0)
@@ -70,7 +80,6 @@ namespace ClosedXML.Excel
                 unchecked
                 {
                     var hashCode = xStyle.GetHashCode();
-                    hashCode = (hashCode * 397) ^ xx.StyleValue.GetHashCode();
                     hashCode = (hashCode * 397) ^ xx.CopyDefaultModify.GetHashCode();
                     hashCode = (hashCode * 397) ^ xValues.GetHashCode();
                     hashCode = (hashCode * 397) ^ (xx.Colors != null ? xx.Colors.GetHashCode() : 0);
@@ -105,50 +114,46 @@ namespace ClosedXML.Excel
             }
         }
 
-        private static readonly IEqualityComparer<IXLConditionalFormat> FullComparerInstance = new FullEqualityComparer(true);
+        private static readonly IEqualityComparer<XLConditionalFormat> NoRangeComparerInstance = new FullEqualityComparer(false);
 
-        public static IEqualityComparer<IXLConditionalFormat> FullComparer
-        {
-            get { return FullComparerInstance; }
-        }
-
-        private static readonly IEqualityComparer<IXLConditionalFormat> NoRangeComparerInstance = new FullEqualityComparer(false);
-
-        public static IEqualityComparer<IXLConditionalFormat> NoRangeComparer
+        public static IEqualityComparer<XLConditionalFormat> NoRangeComparer
         {
             get { return NoRangeComparerInstance; }
         }
 
         #region Constructors
 
-        private XLConditionalFormat(XLStyleValue style)
+        private XLConditionalFormat(XLWorksheet worksheet)
+#if !STYLES_REWORK
             : base(XLStyle.Default.Value)
+#endif
         {
+            _worksheet = worksheet;
             Id = Guid.NewGuid();
-            Ranges = new XLRanges();
+            Ranges = new XLRanges(worksheet);
             Values = new XLDictionary<XLFormula>();
             Colors = new XLDictionary<XLColor>();
             ContentTypes = new XLDictionary<XLCFContentType>();
             IconSetOperators = new XLDictionary<XLCFIconSetOperator>();
         }
 
-        public XLConditionalFormat(XLRange range, Boolean copyDefaultModify = false)
-            : this(XLStyle.Default.Value)
+        public XLConditionalFormat(XLWorksheet worksheet, XLRange range, Boolean copyDefaultModify = false)
+            : this(worksheet)
         {
             if (range != null)
                 Ranges.Add(range);
             CopyDefaultModify = copyDefaultModify;
         }
 
-        public XLConditionalFormat(IEnumerable<XLRange> ranges, Boolean copyDefaultModify = false)
-            : this(XLStyle.Default.Value)
+        public XLConditionalFormat(XLWorksheet worksheet, IEnumerable<XLRange> ranges, Boolean copyDefaultModify = false)
+            : this(worksheet)
         {
             ranges?.ForEach(range => Ranges.Add(range));
             CopyDefaultModify = copyDefaultModify;
         }
 
         public XLConditionalFormat(XLConditionalFormat conditionalFormat, IEnumerable<IXLRange> targetRanges)
-            : this(conditionalFormat.StyleValue)
+            : this(conditionalFormat._worksheet)
         {
             targetRanges?.ForEach(range => Ranges.Add(range));
             CopyFrom(conditionalFormat);
@@ -166,15 +171,24 @@ namespace ClosedXML.Excel
 
         public Boolean CopyDefaultModify { get; set; }
 
+#if STYLES_REWORK
+        public XLDxfValue FormatValue { get; set; }
+
+        internal XLDxFormat Format => new(_worksheet.Workbook.Styles, this);
+
+        public IXLStyle Style
+        {
+            get => Format;
+            set => Format.SetValue(value);
+        }
+#else
         protected override IEnumerable<XLStylizedBase> Children
         {
             get { yield break; }
         }
 
-        public override IXLRanges RangesUsed
-        {
-            get { return new XLRanges(); }
-        }
+        public override IEnumerable<IXLRange> RangesUsed => Array.Empty<IXLRange>();
+#endif
 
         public XLDictionary<XLFormula> Values { get; private set; }
 
@@ -239,7 +253,14 @@ namespace ClosedXML.Excel
 
         public void CopyFrom(IXLConditionalFormat other)
         {
+#if STYLES_REWORK
+            var otherDxf = ((XLConditionalFormat)other).FormatValue;
+            FormatValue = otherDxf is not null
+                ? _worksheet.Workbook.Styles.GetRegisteredDxFormat(otherDxf, static x => x)
+                : null;
+#else
             InnerStyle = other.Style;
+#endif
             ConditionalFormatType = other.ConditionalFormatType;
             TimePeriod = other.TimePeriod;
             IconSetStyle = other.IconSetStyle;

@@ -1,41 +1,48 @@
-// Keep this file CodeMaid organised and cleaned
-using ClosedXML.Excel.Ranges.Index;
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 
 namespace ClosedXML.Excel
 {
-    using System.Collections;
-    using System.Linq;
-
-    internal class XLDataValidations : IXLDataValidations
+    internal class XLDataValidations : IXLDataValidations, IEnumerable<XLDataValidation>, ISheetListener
     {
-        private readonly XLRangeIndex<XLDataValidationIndexEntry> _dataValidationIndex;
-
-        private readonly List<IXLDataValidation> _dataValidations = new List<IXLDataValidation>();
+        private readonly List<XLDataValidation> _dataValidations = new();
         private readonly XLWorksheet _worksheet;
-
-        /// <summary>
-        /// The flag used to avoid unnecessary check for splitting intersected ranges when we already
-        /// are performing the splitting.
-        /// </summary>
-        private bool _skipSplittingExistingRanges = false;
 
         public XLDataValidations(XLWorksheet worksheet)
         {
             _worksheet = worksheet ?? throw new ArgumentNullException(nameof(worksheet));
-            _dataValidationIndex = new XLRangeIndex<XLDataValidationIndexEntry>(_worksheet);
         }
-
-        internal XLWorksheet Worksheet => _worksheet;
 
         #region IXLDataValidations Members
 
         IXLWorksheet IXLDataValidations.Worksheet => _worksheet;
 
-        public IXLDataValidation Add(IXLDataValidation dataValidation)
+        IXLDataValidation IXLDataValidations.Add(IXLDataValidation dataValidation)
         {
-            return Add(dataValidation, skipIntersectionsCheck: false);
+            if (dataValidation == null)
+                throw new ArgumentNullException(nameof(dataValidation));
+
+            var dv = (XLDataValidation)dataValidation;
+            if (dv.Worksheet != _worksheet)
+                return CopyFrom(dv);
+
+            // It's possible that it was detached and while detached, it had added some areas?
+            // I have a very hard time understanding the use case and intended behavior. This
+            // API should be scrapped.
+            if (!_dataValidations.Contains(dv))
+            {
+                // Adding a range can split current one -> clear existing DVs so new one can be
+                // added and "one DV per cell" is kept.
+                foreach (var area in dv.Areas)
+                    AdjustDataValidationAreas(_worksheet, area, static (dataValidationAreas, areaOfNewValidation) => dataValidationAreas.DeleteWithoutShift(areaOfNewValidation));
+
+                _dataValidations.Add(dv);
+            }
+
+            return dv;
         }
 
         public Boolean ContainsSingle(IXLRange range)
@@ -58,48 +65,39 @@ namespace ClosedXML.Excel
             dataValidationsToRemove.ForEach(Delete);
         }
 
-        public void Delete(IXLDataValidation dataValidation)
-        {
-            if (!_dataValidations.Remove(dataValidation))
-                return;
-            var xlDataValidation = (XLDataValidation) dataValidation;
-            xlDataValidation.RangeAdded -= OnRangeAdded;
-            xlDataValidation.RangeRemoved -= OnRangeRemoved;
-
-            foreach (var range in dataValidation.Ranges)
-            {
-                ProcessRangeRemoved(range);
-            }
-        }
-
-        public void Delete(IXLRange range)
-        {
-            if (range == null) throw new ArgumentNullException(nameof(range));
-
-            var dataValidationsToRemove = _dataValidationIndex.GetIntersectedRanges((XLRangeAddress)range.RangeAddress)
-                .Select(e => e.DataValidation)
-                .Distinct()
-                .ToList();
-
-            dataValidationsToRemove.ForEach(Delete);
-        }
-
         /// <summary>
         /// Get all data validation rules applied to ranges that intersect the specified range.
         /// </summary>
         public IEnumerable<IXLDataValidation> GetAllInRange(IXLRangeAddress rangeAddress)
         {
-            if (rangeAddress == null || !rangeAddress.IsValid)
-                return Enumerable.Empty<IXLDataValidation>();
+            if (rangeAddress is null || !rangeAddress.IsValid)
+                yield break;
 
-            return _dataValidationIndex.GetIntersectedRanges((XLRangeAddress)rangeAddress)
-                .Select(indexEntry => indexEntry.DataValidation)
-                .Distinct();
+            if (rangeAddress.Worksheet != _worksheet)
+                yield break;
+
+            var intersectingArea = XLSheetRange.FromRangeAddress(rangeAddress);
+            foreach (var dataValidation in _dataValidations)
+            {
+                foreach (var area in dataValidation.Areas)
+                {
+                    if (intersectingArea.Intersects(area))
+                    {
+                        yield return dataValidation;
+                        break;
+                    }
+                }
+            }
         }
 
-        public IEnumerator<IXLDataValidation> GetEnumerator()
+        public IEnumerator<XLDataValidation> GetEnumerator()
         {
             return _dataValidations.GetEnumerator();
+        }
+
+        IEnumerator<IXLDataValidation> IEnumerable<IXLDataValidation>.GetEnumerator()
+        {
+            return GetEnumerator();
         }
 
         IEnumerator IEnumerable.GetEnumerator()
@@ -111,61 +109,82 @@ namespace ClosedXML.Excel
         /// Get the data validation rule for the range with the specified address if it exists.
         /// </summary>
         /// <param name="rangeAddress">A range address.</param>
-        /// <param name="dataValidation">Data validation rule which ranges collection includes the specified
+        /// <param name="foundDataValidation">Data validation rule which ranges collection includes the specified
         /// address. The specified range should be fully covered with the data validation rule.
         /// For example, if the rule is applied to ranges A1:A3,C1:C3 then this method will
         /// return True for ranges A1:A3, C1:C2, A2:A3, and False for ranges A1:C3, A1:C1, etc.</param>
         /// <returns>True is the data validation rule was found, false otherwise.</returns>
-        public bool TryGet(IXLRangeAddress rangeAddress, out IXLDataValidation? dataValidation)
+        public bool TryGet(IXLRangeAddress rangeAddress, [NotNullWhen(true)] out IXLDataValidation? foundDataValidation)
         {
-            dataValidation = null;
-            if (rangeAddress == null || !rangeAddress.IsValid)
+            if (rangeAddress is null || !rangeAddress.IsValid || rangeAddress.Worksheet != _worksheet)
+            {
+                foundDataValidation = null;
                 return false;
-
-            var candidates = _dataValidationIndex.GetIntersectedRanges((XLRangeAddress)rangeAddress)
-                .Where(c => c.RangeAddress.Contains(rangeAddress.FirstAddress) &&
-                            c.RangeAddress.Contains(rangeAddress.LastAddress));
-
-            var candidate = candidates.FirstOrDefault();
-            if (candidate is null)
-                return false;
-
-            dataValidation = candidate.DataValidation;
-
-            return true;
-        }
-
-        internal IXLDataValidation Add(IXLDataValidation dataValidation, bool skipIntersectionsCheck)
-        {
-            if (dataValidation == null) throw new ArgumentNullException(nameof(dataValidation));
-
-            XLDataValidation xlDataValidation;
-            if (!(dataValidation is XLDataValidation) ||
-                dataValidation.Ranges.Any(r => r.Worksheet != Worksheet))
-            {
-                xlDataValidation = new XLDataValidation(dataValidation, Worksheet);
-            }
-            else
-            {
-                xlDataValidation = (XLDataValidation)dataValidation;
             }
 
-            xlDataValidation.RangeAdded += OnRangeAdded;
-            xlDataValidation.RangeRemoved += OnRangeRemoved;
-
-            foreach (var range in xlDataValidation.Ranges)
+            var coveredArea = XLSheetRange.FromRangeAddress(rangeAddress);
+            foreach (var dataValidation in _dataValidations)
             {
-                ProcessRangeAdded(range, xlDataValidation, skipIntersectionsCheck);
+                foreach (var area in dataValidation.Areas)
+                {
+                    if (area.Covers(coveredArea))
+                    {
+                        foundDataValidation = dataValidation;
+                        return true;
+                    }
+                }
             }
 
-            _dataValidations.Add(xlDataValidation);
-
-            return xlDataValidation;
+            foundDataValidation = null;
+            return false;
         }
 
         #endregion IXLDataValidations Members
 
-        public void Consolidate()
+        /// <summary>
+        /// Create a new DV with an initial area.
+        /// </summary>
+        internal XLDataValidation Create(XLSheetRange area)
+        {
+            var dv = new XLDataValidation(_worksheet);
+            _dataValidations.Add(dv);
+            AddArea(dv, area);
+            return dv;
+        }
+
+        /// <summary>
+        /// Create a new DV that is created from another DV from different sheet.
+        /// </summary>
+        internal XLDataValidation CopyFrom(XLDataValidation original)
+        {
+            var dv = new XLDataValidation(_worksheet);
+            _dataValidations.Add(dv);
+            dv.CopyFrom(original);
+            return dv;
+        }
+
+        internal void Delete(XLSheetRange areaToDelete)
+        {
+            for (var i = _dataValidations.Count - 1; i >= 0; --i)
+            {
+                var dataValidation = _dataValidations[i];
+                foreach (var dataValidationArea in dataValidation.Areas)
+                {
+                    if (dataValidationArea.Intersects(areaToDelete))
+                    {
+                        _dataValidations.RemoveAt(i);
+                        break;
+                    }
+                }
+            }
+        }
+
+        internal void Delete(XLDataValidation dataValidation)
+        {
+            _dataValidations.Remove(dataValidation);
+        }
+
+        internal void Consolidate()
         {
             Func<IXLDataValidation, IXLDataValidation, bool> areEqual = (dv1, dv2) =>
             {
@@ -187,94 +206,98 @@ namespace ClosedXML.Excel
             };
 
             var rules = _dataValidations.ToList();
-            rules.ForEach(Delete);
+            _dataValidations.Clear();
 
             while (rules.Any())
             {
-                var similarRules = rules.Where(r => areEqual(rules.First(), r)).ToList();
+                var consRule = rules.First();
+                _dataValidations.Add(consRule);
+                var similarRules = rules.Where(r => areEqual(consRule, r)).ToList();
                 similarRules.ForEach(r => rules.Remove(r));
 
-                var consRule = similarRules.First();
-                var ranges = similarRules.SelectMany(dv => dv.Ranges).ToList();
+                IXLRanges consolidatedRanges = new XLRanges(_worksheet);
+                foreach (var similarRuleArea in similarRules.SelectMany(dv => dv.Areas))
+                    consolidatedRanges.Add(_worksheet.Range(XLRangeAddress.FromSheetRange(_worksheet, similarRuleArea)));
 
-                IXLRanges consolidatedRanges = new XLRanges();
-                ranges.ForEach(r => consolidatedRanges.Add(r));
                 consolidatedRanges = consolidatedRanges.Consolidate();
 
                 consRule.ClearRanges();
                 consRule.AddRanges(consolidatedRanges);
-                Add(consRule);
             }
         }
 
-        private void OnRangeAdded(object sender, RangeEventArgs e)
+        internal void AddArea(XLDataValidation modifiedDataValidation, XLSheetRange addedArea)
         {
-            ProcessRangeAdded(e.Range, (XLDataValidation) sender, skipIntersectionCheck: false);
-        }
+            // Add an area to modifiedDV. This must be done carefully, because there can be only
+            // one DV per cell. Due to this problem, the correspondence area-DV should be managed
+            // by the DV collection and this method should be private. Change to private would
+            // require change of DV to a nested class + separation of API object, so the method is
+            // internal + exception.
+            if (!_dataValidations.Contains(modifiedDataValidation))
+                throw new ArgumentException("Data validation is not a data validation of this sheet.", nameof(modifiedDataValidation));
 
-        private void OnRangeRemoved(object sender, RangeEventArgs e)
-        {
-            ProcessRangeRemoved(e.Range);
-        }
-
-        private void ProcessRangeAdded(IXLRange range, XLDataValidation dataValidation, bool skipIntersectionCheck)
-        {
-            if (!skipIntersectionCheck)
+            // There can be only one DV per cell. Remove DVs from cells that should now belong
+            // to the area and remove DVs without any cells.
+            for (var i = _dataValidations.Count - 1; i >= 0; --i)
             {
-                SplitExistingRanges(range.RangeAddress);
-            }
+                var dataValidation = _dataValidations[i];
 
-            var indexEntry = new XLDataValidationIndexEntry(range.RangeAddress, dataValidation);
-            _dataValidationIndex.Add(indexEntry);
-        }
+                // Area could cover whole modifiedDataValidation and could remove the modifiedDV
+                // before the addedArea could be added to the modifiedDV. To avoid this, it is not
+                // cleared.
+                if (dataValidation == modifiedDataValidation)
+                    continue;
 
-        private void ProcessRangeRemoved(IXLRange range)
-        {
-            var entries = _dataValidationIndex.GetIntersectedRanges((XLRangeAddress)range.RangeAddress)
-                .Where(e => Equals(e.RangeAddress, range.RangeAddress));
-            entries.ToArray().ForEach(entry => _dataValidationIndex.Remove(entry.RangeAddress));
-        }
-
-        private void SplitExistingRanges(IXLRangeAddress rangeAddress)
-        {
-            if (_skipSplittingExistingRanges) return;
-
-            try
-            {
-                _skipSplittingExistingRanges = true;
-                var entries = _dataValidationIndex.GetIntersectedRanges((XLRangeAddress)rangeAddress)
-                    .ToList();
-
-                foreach (var entry in entries)
+                dataValidation.Areas = dataValidation.Areas.DeleteWithoutShift(addedArea);
+                if (dataValidation.Areas.Count == 0)
                 {
-                    entry.DataValidation.SplitBy(rangeAddress);
+                    _dataValidations.RemoveAt(i);
                 }
             }
-            finally
-            {
-                _skipSplittingExistingRanges = false;
-            }
 
-            //TODO Remove empty data validations
+            // Ensure the modifiedDV area list contains only disjunct areas to ensure
+            // the "one DV per cell" invariant.
+            modifiedDataValidation.Areas = modifiedDataValidation.Areas.DeleteWithoutShift(addedArea).With(addedArea);
         }
 
-        /// <summary>
-        /// Class used for indexing data validation rules.
-        /// </summary>
-        private class XLDataValidationIndexEntry : IXLAddressable
+        void ISheetListener.OnInsertAreaAndShiftDown(XLWorksheet sheet, XLSheetRange area)
         {
-            public XLDataValidationIndexEntry(IXLRangeAddress rangeAddress, XLDataValidation dataValidation)
+            AdjustDataValidationAreas(sheet, area, static (sqref, insertedArea) => sqref.InsertAndShiftDown(insertedArea));
+        }
+
+        void ISheetListener.OnInsertAreaAndShiftRight(XLWorksheet sheet, XLSheetRange area)
+        {
+            AdjustDataValidationAreas(sheet, area, static (sqref, insertedArea) => sqref.InsertAndShiftRight(insertedArea));
+        }
+
+        void ISheetListener.OnDeleteAreaAndShiftLeft(XLWorksheet sheet, XLSheetRange deletedRange)
+        {
+            AdjustDataValidationAreas(sheet, deletedRange, static (sqref, deletedArea) => sqref.DeleteAndShiftLeft(deletedArea));
+        }
+
+        void ISheetListener.OnDeleteAreaAndShiftUp(XLWorksheet sheet, XLSheetRange deletedRange)
+        {
+            AdjustDataValidationAreas(sheet, deletedRange, static (sqref, deletedArea) => sqref.DeleteAndShiftUp(deletedArea));
+        }
+
+        private void AdjustDataValidationAreas(XLWorksheet sheet, XLSheetRange affectedRange, Func<XLAreaList, XLSheetRange, XLAreaList> adjustAreas)
+        {
+            if (sheet != _worksheet)
+                return;
+
+            for (var i = _dataValidations.Count - 1; i >= 0; --i)
             {
-                RangeAddress = rangeAddress;
-                DataValidation = dataValidation;
+                var dataValidation = _dataValidations[i];
+                var modifiedAreaList = adjustAreas(dataValidation.Areas, affectedRange);
+                if (modifiedAreaList.Count == 0)
+                {
+                    _dataValidations.RemoveAt(i);
+                }
+                else
+                {
+                    dataValidation.Areas = modifiedAreaList;
+                }
             }
-
-            public XLDataValidation DataValidation { get; }
-
-            /// <summary>
-            ///   Gets an object with the boundaries of this range.
-            /// </summary>
-            public IXLRangeAddress RangeAddress { get; }
         }
     }
 }

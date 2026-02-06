@@ -360,7 +360,7 @@ namespace ClosedXML.Excel.IO
 
             #region Columns
 
-            var worksheetStyleId = context.SharedStyles[xlWorksheet.StyleValue].StyleId;
+            var worksheetStyleId = context.GetStyleId(xlWorksheet.StyleValue, xlWorksheet.FormatValue);
             if (xlWorksheet.Internals.CellsCollection.IsEmpty &&
                 xlWorksheet.Internals.ColumnsCollection.Count == 0
                 && worksheetStyleId == 0)
@@ -421,7 +421,7 @@ namespace ClosedXML.Excel.IO
                     var outlineLevel = 0;
                     if (xlWorksheet.Internals.ColumnsCollection.TryGetValue(co, out XLColumn col))
                     {
-                        styleId = context.SharedStyles[col.StyleValue].StyleId;
+                        styleId = context.GetStyleId(col.StyleValue, col.FormatValue);
                         columnWidth = GetColumnWidth(col.Width).SaveRound();
                         isHidden = col.IsHidden;
                         collapsed = col.Collapsed;
@@ -429,7 +429,7 @@ namespace ClosedXML.Excel.IO
                     }
                     else
                     {
-                        styleId = context.SharedStyles[xlWorksheet.StyleValue].StyleId;
+                        styleId = worksheetStyleId;
                         columnWidth = worksheetColumnWidth;
                     }
 
@@ -2060,7 +2060,7 @@ namespace ClosedXML.Excel.IO
                     if (xlWorksheet.Internals.RowsCollection.TryGetValue(currentRowNumber, out var row))
                     {
                         rowPropIndex++;
-                        rowStyleId = context.SharedStyles[row.StyleValue].StyleId;
+                        rowStyleId = context.GetStyleId(row.StyleValue, row.FormatValue);
                     }
                     else
                     {
@@ -2100,6 +2100,7 @@ namespace ClosedXML.Excel.IO
                 return xlRow.HeightChanged ||
                     xlRow.IsHidden ||
                     xlRow.StyleValue != xlRow.Worksheet.StyleValue ||
+                    xlRow.FormatValue is not null && xlRow.FormatValue != xlRow.Worksheet.Workbook.Styles.DefaultFormat ||
                     xlRow.Collapsed ||
                     xlRow.OutlineLevel > 0;
             }
@@ -2139,10 +2140,17 @@ namespace ClosedXML.Excel.IO
                     w.WriteAttributeString("hidden", TrueValue);
                 }
 
-                if (xlRow.StyleValue != xlRow.Worksheet.StyleValue)
+                var rowHasCustomFormat =
+#if STYLES_REWORK
+                    xlRow.FormatValue is not null && xlRow.FormatValue != xlRow.Worksheet.Workbook.Styles.DefaultFormat;
+#else
+                    xlRow.StyleValue != xlRow.Worksheet.StyleValue;
+#endif
+
+                if (rowHasCustomFormat)
                 {
-                    var styleIndex = context.SharedStyles[xlRow.StyleValue].StyleId;
-                    w.WriteAttribute("s", styleIndex);
+                    var formatIndex = context.GetStyleId(xlRow.StyleValue, xlRow.FormatValue);
+                    w.WriteAttribute("s", formatIndex);
                     w.WriteAttributeString("customFormat", TrueValue);
                 }
 
@@ -2198,7 +2206,7 @@ namespace ClosedXML.Excel.IO
 
             static void WriteCell(XmlWriter xml, XLCell xlCell, char[] cellRef, SaveContext context, SaveOptions options, HashSet<IXLAddress> tableTotalCells, uint rowStyleId)
             {
-                var styleId = context.SharedStyles[xlCell.StyleValue].StyleId;
+                var styleId = context.GetStyleId(xlCell.StyleValue, xlCell.FormatValue);
 
                 Span<Char> cellRefSpan = cellRef;
                 var cellRefLen = xlCell.SheetPoint.Format(cellRefSpan);

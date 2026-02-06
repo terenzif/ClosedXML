@@ -2,37 +2,40 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using ClosedXML.Graphics;
+using ClosedXML.Excel.Formatting;
 
 namespace ClosedXML.Excel
 {
-    internal class XLColumn : XLRangeBase, IXLColumn
+    internal class XLColumn : XLRangeBase, IXLColumn, IXLFormatContainer
     {
-        #region Private fields
-
         private int _outlineLevel;
-
-        #endregion Private fields
-
-        #region Constructor
 
         /// <summary>
         /// The direct constructor should only be used in <see cref="XLWorksheet.RangeFactory"/>.
         /// </summary>
         public XLColumn(XLWorksheet worksheet, Int32 column)
+#if STYLES_REWORK
+            : base(XLRangeAddress.EntireColumn(worksheet, column))
+#else
             : base(XLRangeAddress.EntireColumn(worksheet, column), worksheet.StyleValue)
+#endif
         {
             SetColumnNumber(column);
 
             Width = worksheet.ColumnWidth;
         }
 
-        #endregion Constructor
+        /// <summary>
+        /// Get area of this column.
+        /// </summary>
+        internal XLColumnArea Area => new(Worksheet.Name, ColumnNumber());
 
         public override XLRangeType RangeType
         {
             get { return XLRangeType.Column; }
         }
 
+#if !STYLES_REWORK
         protected override IEnumerable<XLStylizedBase> Children
         {
             get
@@ -42,6 +45,7 @@ namespace ClosedXML.Excel
                     yield return cell;
             }
         }
+#endif
 
         public Boolean Collapsed { get; set; }
 
@@ -73,7 +77,7 @@ namespace ClosedXML.Excel
 
         public override XLCells Cells(String cellsInColumn)
         {
-            var retVal = new XLCells(false, XLCellsUsedOptions.All);
+            var retVal = new XLCells(Worksheet, false, XLCellsUsedOptions.All);
             var rangePairs = cellsInColumn.Split(',');
             foreach (string pair in rangePairs)
                 retVal.Add(Range(pair.Trim()).RangeAddress);
@@ -128,7 +132,7 @@ namespace ClosedXML.Excel
             {
                 var internalColumn = Worksheet.Internals.ColumnsCollection[newColumn.ColumnNumber()];
                 internalColumn.Width = Width;
-                internalColumn.InnerStyle = InnerStyle;
+                internalColumn.StyleValue = StyleValue;
                 internalColumn.Collapsed = Collapsed;
                 internalColumn.IsHidden = IsHidden;
                 internalColumn._outlineLevel = OutlineLevel;
@@ -412,7 +416,7 @@ namespace ClosedXML.Excel
             column.Clear();
             var newColumn = (XLColumn)column;
             newColumn.Width = Width;
-            newColumn.InnerStyle = InnerStyle;
+            newColumn.StyleValue = StyleValue;
             newColumn.IsHidden = IsHidden;
 
             (this as XLRangeBase).CopyTo(column);
@@ -432,7 +436,7 @@ namespace ClosedXML.Excel
 
         public IXLRangeColumns Columns(String columns)
         {
-            var retVal = new XLRangeColumns();
+            var retVal = new XLRangeColumns(Worksheet);
             var columnPairs = columns.Split(',');
             foreach (string pair in columnPairs)
                 AsRange().Columns(pair.Trim()).ForEach(retVal.Add);
@@ -455,6 +459,18 @@ namespace ClosedXML.Excel
         }
 
         #endregion IXLColumn Members
+
+        #region IXLFormatContainer
+
+        /// <remarks>
+        /// Format of the column or <c>null</c> for default format.
+        /// </remarks>
+        /// <inheritdoc cref="IXLFormatContainer.FormatValue"/>
+        public XLCellFormatValue? FormatValue { get; set; }
+
+        internal override XLCellFormat Format => XLCellFormat.ForColumn(this);
+
+        #endregion
 
         public override XLRange AsRange()
         {
@@ -587,5 +603,14 @@ namespace ClosedXML.Excel
         {
             return true;
         }
+
+#if STYLES_REWORK
+        // TODO Styles: Replace with FormatValue during cut-over
+        internal XLStyleValue StyleValue
+        {
+            get;
+            set;
+        } = null!;
+#endif
     }
 }

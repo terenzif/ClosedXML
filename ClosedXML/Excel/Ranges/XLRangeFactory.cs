@@ -1,27 +1,15 @@
-#nullable disable
-
 using System;
 
 namespace ClosedXML.Excel
 {
     internal class XLRangeFactory
     {
-        #region Properties
-
-        public XLWorksheet Worksheet { get; private set; }
-
-        #endregion Properties
-
-        #region Constructors
+        private readonly XLWorksheet _worksheet;
 
         public XLRangeFactory(XLWorksheet worksheet)
         {
-            if (worksheet == null)
-                throw new ArgumentNullException(nameof(worksheet));
-            Worksheet = worksheet;
+            _worksheet = worksheet ?? throw new ArgumentNullException(nameof(worksheet));
         }
-
-        #endregion Constructors
 
         #region Methods
 
@@ -55,35 +43,32 @@ namespace ClosedXML.Excel
 
         public XLRange CreateRange(XLRangeAddress rangeAddress)
         {
-            var xlRangeParameters = new XLRangeParameters(rangeAddress, Worksheet.Style);
-            return new XLRange(xlRangeParameters);
+            return new XLRange(rangeAddress, _worksheet.Style);
         }
 
         public XLColumn CreateColumn(int columnNumber)
         {
-            return new XLColumn(Worksheet, columnNumber);
+            return new XLColumn(_worksheet, columnNumber);
         }
 
         public XLRow CreateRow(int rowNumber)
         {
-            return new XLRow(Worksheet, rowNumber);
+            return new XLRow(_worksheet, rowNumber);
         }
 
         public XLRangeColumn CreateRangeColumn(XLRangeAddress rangeAddress)
         {
-            var xlRangeParameters = new XLRangeParameters(rangeAddress, Worksheet.Style);
-            return new XLRangeColumn(xlRangeParameters);
+            return new XLRangeColumn(rangeAddress, _worksheet.Style);
         }
 
         public XLRangeRow CreateRangeRow(XLRangeAddress rangeAddress)
         {
-            var xlRangeParameters = new XLRangeParameters(rangeAddress, Worksheet.Style);
-            return new XLRangeRow(xlRangeParameters);
+            return new XLRangeRow(rangeAddress, _worksheet.Style);
         }
 
         public XLTable CreateTable(XLRangeAddress rangeAddress)
         {
-            return new XLTable(new XLRangeParameters(rangeAddress, Worksheet.Style));
+            return new XLTable(rangeAddress, _worksheet.Style);
         }
 
         #endregion Methods

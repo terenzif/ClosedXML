@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using Path = System.IO.Path;
 
@@ -31,7 +32,7 @@ namespace ClosedXML.Tests
 
         private const bool CompareWithResources = true;
 
-        private static readonly ResourceFileExtractor _extractor = new ResourceFileExtractor(".Resource.");
+        private static readonly ResourceFileExtractor _extractor = new(Assembly.GetExecutingAssembly(), ".Resource.");
 
         public static void SaveWorkbook(XLWorkbook workbook, params string[] fileNameParts)
         {
@@ -260,6 +261,8 @@ namespace ClosedXML.Tests
         /// </summary>
         /// <param name="createWorksheet">Code to create a workbook.</param>
         /// <param name="assertLoadedWorkbook">Method to assert that workbook was loaded correctly.</param>
+        /// <param name="validate">Validate created workbook that it is a valid OOXML file by OpenXML SDK.</param>
+        /// <param name="evaluateFormulas">Evaluate formulas during saving and save the evaluated results to the workbook file.</param>
         public static void CreateSaveLoadAssert(Action<XLWorkbook, IXLWorksheet> createWorksheet, Action<XLWorkbook, IXLWorksheet> assertLoadedWorkbook, bool validate = true, bool evaluateFormulas = false)
         {
             using var ms = new MemoryStream();

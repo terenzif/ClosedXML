@@ -1,6 +1,8 @@
 using ClosedXML.Excel;
+using ClosedXML.Tests.Utils;
 using NUnit.Framework;
-using System.IO;
+using System.Collections.Generic;
+using ClosedXML.Tests.Excel.Styles;
 
 namespace ClosedXML.Tests.Excel
 {
@@ -8,16 +10,78 @@ namespace ClosedXML.Tests.Excel
     public class XLFillTests
     {
         [Test]
-        public void BackgroundColorSetsPattern()
+        [TestCaseSource(nameof(FillApiSetters))]
+        public void Fill_property_can_be_individually_set(FormatTestCase<IXLFill> testCase)
         {
-            var fill = new XLFill { BackgroundColor = XLColor.Blue };
+            using var wb = new XLWorkbook();
+            var ws = wb.AddWorksheet();
+
+            // Set two-color pattern, so setting individual property doesn't trigger special logic
+            var cellFormat = ws.Cell("B2").Style
+                    .Fill.SetPatternType(XLFillPatternValues.LightGrid)
+                    .Fill.SetBackgroundColor(XLColor.Aqua)
+                    .Fill.SetPatternColor(XLColor.Lemon);
+
+            foreach (var testValue in testCase.Values)
+            {
+                testCase.SetPropertyValue(cellFormat.Fill, testValue);
+                var setValue = testCase.GetPropertyValue(cellFormat.Fill);
+                Assert.AreEqual(testValue, setValue);
+            }
+        }
+
+        private static IEnumerable<FormatTestCase<IXLFill>> FillApiSetters()
+        {
+            var patternValues = EnumPolyfill.GetValues<XLFillPatternValues>();
+            yield return FormatTestCase<IXLFill>.ForFill(fill => fill.PatternType, (fill, value) => fill.PatternType = value, patternValues);
+            yield return FormatTestCase<IXLFill>.ForFill(fill => fill.PatternType, (fill, value) => fill.SetPatternType(value), patternValues);
+
+            var colors = new[] { XLColor.Black, XLColor.Red, XLColor.Auto, XLColor.Transparent };
+            yield return FormatTestCase<IXLFill>.ForFill(fill => fill.BackgroundColor, (fill, value) => fill.BackgroundColor = value, colors);
+            yield return FormatTestCase<IXLFill>.ForFill(fill => fill.BackgroundColor, (fill, value) => fill.SetBackgroundColor(value), colors);
+
+            yield return FormatTestCase<IXLFill>.ForFill(fill => fill.PatternColor, (fill, value) => fill.PatternColor = value, colors);
+            yield return FormatTestCase<IXLFill>.ForFill(fill => fill.PatternColor, (fill, value) => fill.SetPatternColor(value), colors);
+        }
+
+        [Test]
+        public void BackgroundColor_keeps_pattern_on_two_color_patterns()
+        {
+            using var wb = new XLWorkbook();
+            var ws = wb.AddWorksheet();
+            var fill = ws.Cell("A1").Style.Fill;
+            fill.PatternType = XLFillPatternValues.LightGrid;
+            Assert.AreEqual(XLFillPatternValues.LightGrid, fill.PatternType);
+
+            fill.BackgroundColor = XLColor.Blue;
+
+            Assert.AreEqual(XLFillPatternValues.LightGrid, fill.PatternType);
+        }
+
+        [Test]
+        public void BackgroundColor_sets_pattern_to_solid_when_original_pattern_was_none()
+        {
+            using var wb = new XLWorkbook();
+            var ws = wb.AddWorksheet();
+            var fill = ws.Cell("A1").Style.Fill;
+            Assert.AreEqual(XLFillPatternValues.None, fill.PatternType);
+
+            fill.BackgroundColor = XLColor.Blue;
+
             Assert.AreEqual(XLFillPatternValues.Solid, fill.PatternType);
         }
 
         [Test]
-        public void BackgroundNoColorSetsPatternNone()
+        public void BackgroundColor_set_to_transparent_color_sets_pattern_to_none()
         {
-            var fill = new XLFill { BackgroundColor = XLColor.NoColor };
+            using var wb = new XLWorkbook();
+            var ws = wb.AddWorksheet();
+            var fill = ws.Cell("A1").Style.Fill;
+            fill.BackgroundColor = XLColor.Red;
+            Assert.AreEqual(XLFillPatternValues.Solid, fill.PatternType);
+
+            fill.BackgroundColor = XLColor.NoColor;
+
             Assert.AreEqual(XLFillPatternValues.None, fill.PatternType);
         }
 
@@ -102,16 +166,9 @@ namespace ClosedXML.Tests.Excel
         [Test]
         public void LoadAndSaveTransparentBackgroundFill()
         {
-            using (var stream = TestHelper.GetStreamFromResource(TestHelper.GetResourcePath(@"Other\StyleReferenceFiles\TransparentBackgroundFill\inputfile.xlsx")))
-            using (var ms = new MemoryStream())
-            {
-                TestHelper.CreateAndCompare(() =>
-                {
-                    var wb = new XLWorkbook(stream);
-                    wb.SaveAs(ms);
-                    return wb;
-                }, @"Other\StyleReferenceFiles\TransparentBackgroundFill\TransparentBackgroundFill.xlsx");
-            }
+            TestHelper.LoadSaveAndCompare(
+                @"Other\StyleReferenceFiles\TransparentBackgroundFill\inputfile.xlsx",
+                @"Other\StyleReferenceFiles\TransparentBackgroundFill\TransparentBackgroundFill.xlsx");
         }
 
         [Test]

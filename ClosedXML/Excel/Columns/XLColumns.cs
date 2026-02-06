@@ -1,31 +1,51 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 
 namespace ClosedXML.Excel
 {
-    using System.Collections;
-
-    internal class XLColumns : XLStylizedBase, IXLColumns, IXLStylized
+    internal class XLColumns :
+#if !STYLES_REWORK
+        XLStylizedBase,
+#endif
+        IXLColumns
     {
         private readonly List<XLColumn> _columnsCollection = new List<XLColumn>();
+
+        private readonly XLWorkbook _workbook;
         private readonly XLWorksheet? _worksheet;
+        private readonly XLWorksheet? _defaultStyleSheet;
+
+        /// <summary>
+        /// This object represents all columns of the worksheet, even non-materialized ones.
+        /// </summary>
+        [MemberNotNullWhen(true, nameof(_worksheet))]
+        private bool AllColumnsOfSheet => _worksheet is not null;
+
         private bool IsMaterialized => _lazyEnumerable == null;
 
         private IEnumerable<XLColumn>? _lazyEnumerable;
+
         private IEnumerable<XLColumn> Columns => _lazyEnumerable ?? _columnsCollection.AsEnumerable();
 
         /// <summary>
         /// Create a new instance of <see cref="XLColumns"/>.
         /// </summary>
+        /// <param name="workbook">Workbook to which all columns belong.</param>
         /// <param name="worksheet">If worksheet is specified it means that the created instance represents
         /// all columns on a worksheet so changing its width will affect all columns.</param>
-        /// <param name="defaultStyle">Default style to use when initializing child entries.</param>
+        /// <param name="defaultStyleSheet">A sheet with a default style to use when initializing child entries.</param>
         /// <param name="lazyEnumerable">A predefined enumerator of <see cref="XLColumn"/> to support lazy initialization.</param>
-        public XLColumns(XLWorksheet? worksheet, XLStyleValue? defaultStyle = null, IEnumerable<XLColumn>? lazyEnumerable = null)
-            : base(defaultStyle)
+        public XLColumns(XLWorkbook workbook, XLWorksheet? worksheet, XLWorksheet? defaultStyleSheet = null, IEnumerable<XLColumn>? lazyEnumerable = null)
+#if !STYLES_REWORK
+            : base(defaultStyleSheet?.StyleValue)
+#endif
         {
+            _workbook = workbook;
             _worksheet = worksheet;
+            _defaultStyleSheet = defaultStyleSheet;
             _lazyEnumerable = lazyEnumerable;
         }
 
@@ -47,7 +67,7 @@ namespace ClosedXML.Excel
             {
                 Columns.ForEach(c => c.Width = value);
 
-                if (_worksheet == null) return;
+                if (!AllColumnsOfSheet) return;
 
                 _worksheet.ColumnWidth = value;
                 _worksheet.Internals.ColumnsCollection.ForEach(c => c.Value.Width = value);
@@ -56,7 +76,7 @@ namespace ClosedXML.Excel
 
         public void Delete()
         {
-            if (_worksheet != null)
+            if (AllColumnsOfSheet)
             {
                 _worksheet.Internals.ColumnsCollection.Clear();
                 _worksheet.Internals.CellsCollection.Clear();
@@ -171,7 +191,7 @@ namespace ClosedXML.Excel
 
         public IXLCells Cells()
         {
-            var cells = new XLCells(false, XLCellsUsedOptions.All);
+            var cells = new XLCells(_workbook, false, XLCellsUsedOptions.All);
             foreach (XLColumn container in Columns)
                 cells.Add(container.RangeAddress);
             return cells;
@@ -179,7 +199,7 @@ namespace ClosedXML.Excel
 
         public IXLCells CellsUsed()
         {
-            var cells = new XLCells(true, XLCellsUsedOptions.All);
+            var cells = new XLCells(_workbook, true, XLCellsUsedOptions.All);
             foreach (XLColumn container in Columns)
                 cells.Add(container.RangeAddress);
             return cells;
@@ -194,7 +214,7 @@ namespace ClosedXML.Excel
 
         public IXLCells CellsUsed(XLCellsUsedOptions options)
         {
-            var cells = new XLCells(true, options);
+            var cells = new XLCells(_workbook, true, options);
             foreach (XLColumn container in Columns)
                 cells.Add(container.RangeAddress);
             return cells;
@@ -210,15 +230,37 @@ namespace ClosedXML.Excel
             return this;
         }
 
+#if STYLES_REWORK
+        public IXLStyle Style
+        {
+            get => Format;
+            set => Format.SetStyle(value);
+        }
+#endif
+
+        internal XLCellFormat Format
+        {
+            get
+            {
+                if (AllColumnsOfSheet)
+                {
+                    return XLCellFormat.ForWorksheet(_worksheet);
+                }
+
+                return XLCellFormat.ForColumns(_workbook, _defaultStyleSheet, Columns);
+            }
+        }
+
         #endregion IXLColumns Members
 
+#if !STYLES_REWORK
         #region IXLStylized Members
 
         protected override IEnumerable<XLStylizedBase> Children
         {
             get
             {
-                if (_worksheet != null)
+                if (AllColumnsOfSheet)
                     yield return _worksheet;
                 else
                 {
@@ -228,18 +270,18 @@ namespace ClosedXML.Excel
             }
         }
 
-        public override IXLRanges RangesUsed
+        public override IEnumerable<IXLRange> RangesUsed
         {
             get
             {
-                var retVal = new XLRanges();
+                var retVal = new XLRanges(_workbook);
                 this.ForEach(c => retVal.Add(c.AsRange()));
                 return retVal;
             }
         }
 
         #endregion IXLStylized Members
-
+#endif
         public void Add(XLColumn column)
         {
             Materialize();

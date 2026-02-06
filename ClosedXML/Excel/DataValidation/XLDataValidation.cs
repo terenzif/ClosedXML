@@ -7,59 +7,30 @@ using System.Linq;
 
 namespace ClosedXML.Excel
 {
-    internal class RangeEventArgs : EventArgs
-    {
-        public RangeEventArgs(IXLRange range)
-        {
-            Range = range ?? throw new ArgumentNullException(nameof(range));
-        }
-
-        public IXLRange Range { get; }
-    }
-
     internal class XLDataValidation : IXLDataValidation
     {
-        private readonly XLRanges _ranges;
         private readonly XLWorksheet _worksheet;
 
-        public XLDataValidation(IXLRange range)
-            : this(range?.Worksheet as XLWorksheet)
-        {
-            if (range == null) throw new ArgumentNullException(nameof(range));
-
-            AddRange(range);
-        }
-
-        public XLDataValidation(IXLDataValidation dataValidation, XLWorksheet worksheet)
-            : this(worksheet)
+        internal XLDataValidation(XLWorksheet worksheet)
         {
             _worksheet = worksheet;
-            CopyFrom(dataValidation);
-        }
-
-        private XLDataValidation(XLWorksheet worksheet)
-        {
-            _worksheet = worksheet ?? throw new ArgumentNullException(nameof(worksheet));
-            _ranges = new XLRanges();
             Initialize();
         }
 
-        internal event EventHandler<RangeEventArgs> RangeAdded;
-
-        internal event EventHandler<RangeEventArgs> RangeRemoved;
-
         internal XLWorksheet Worksheet => _worksheet;
+
+        internal XLAreaList Areas { get; set; } = XLAreaList.Empty;
 
         public void Clear()
         {
             Initialize();
         }
 
-        public void CopyFrom(IXLDataValidation dataValidation)
+        internal void CopyFrom(IXLDataValidation dataValidation)
         {
             if (dataValidation == this) return;
 
-            if (!_ranges.Any())
+            if (Areas.Count == 0)
                 AddRanges(dataValidation.Ranges);
 
             IgnoreBlanks = dataValidation.IgnoreBlanks;
@@ -85,18 +56,6 @@ namespace ClosedXML.Excel
                    (!String.IsNullOrWhiteSpace(InputTitle) || !String.IsNullOrWhiteSpace(InputMessage)))
                 || (ShowErrorMessage &&
                    (!String.IsNullOrWhiteSpace(ErrorTitle) || !String.IsNullOrWhiteSpace(ErrorMessage)));
-        }
-
-        internal void SplitBy(IXLRangeAddress rangeAddress)
-        {
-            var rangesToSplit = _ranges.GetIntersectedRanges(rangeAddress).ToList();
-
-            foreach (var rangeToSplit in rangesToSplit)
-            {
-                var newRanges = (rangeToSplit as XLRange).Split(rangeAddress, includeIntersection: false);
-                RemoveRange(rangeToSplit);
-                newRanges.ForEach(AddRange);
-            }
         }
 
         private void Initialize()
@@ -151,7 +110,21 @@ namespace ClosedXML.Excel
         public String MaxValue { get => maxValue; set { Validate(value); maxValue = value; } }
         public String MinValue { get => minValue; set { Validate(value); minValue = value; } }
         public XLOperator Operator { get; set; }
-        public IEnumerable<IXLRange> Ranges => _ranges.AsEnumerable();
+
+        public IEnumerable<IXLRange> Ranges
+        {
+            get
+            {
+                var ranges = new XLRanges(Worksheet);
+                foreach (var area in Areas)
+                {
+                    var range = _worksheet.Range(XLRangeAddress.FromSheetRange(_worksheet, area));
+                    ranges.Add(range);
+                }
+
+                return ranges;
+            }
+        }
 
         public Boolean ShowErrorMessage { get; set; }
 
@@ -198,14 +171,17 @@ namespace ClosedXML.Excel
         /// <param name="range">A range to add.</param>
         public void AddRange(IXLRange range)
         {
-            if (range == null) throw new ArgumentNullException(nameof(range));
+            if (range == null)
+                throw new ArgumentNullException(nameof(range));
 
-            if (range.Worksheet != Worksheet)
-                range = Worksheet.Range(((XLRangeAddress)range.RangeAddress).WithoutWorksheet());
+            // Do not add area if the DV has been detached (e.g. consolidation).
+            var isDetached = !_worksheet.DataValidations.Contains(this);
+            if (isDetached)
+                return;
 
-            _ranges.Add(range);
-
-            RangeAdded?.Invoke(this, new RangeEventArgs(range));
+            // Ignore sheet of a range
+            var area = XLSheetRange.FromRangeAddress(range.RangeAddress);
+            _worksheet.DataValidations.AddArea(this, area);
         }
 
         /// <summary>
@@ -229,13 +205,7 @@ namespace ClosedXML.Excel
         /// </summary>
         public void ClearRanges()
         {
-            var allRanges = _ranges.ToList();
-            _ranges.RemoveAll();
-
-            foreach (var range in allRanges)
-            {
-                RangeRemoved?.Invoke(this, new RangeEventArgs(range));
-            }
+            Areas = XLAreaList.Empty;
         }
 
         public void Custom(String customValidation)
@@ -275,14 +245,11 @@ namespace ClosedXML.Excel
             if (range == null)
                 return false;
 
-            var res = _ranges.Remove(range);
-
-            if (res)
-            {
-                RangeRemoved?.Invoke(this, new RangeEventArgs(range));
-            }
-
-            return res;
+            var areaToDelete = XLBookArea.From(range).Area;
+            var originalAreas = Areas;
+            Areas = Areas.Without(areaToDelete);
+            var deleted = originalAreas.Count > Areas.Count;
+            return deleted;
         }
 
         #endregion IXLDataValidation Members

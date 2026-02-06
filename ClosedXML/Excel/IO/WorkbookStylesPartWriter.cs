@@ -1,12 +1,14 @@
+#if !STYLES_REWORK
 #nullable disable
 
-using ClosedXML.Utils;
-using DocumentFormat.OpenXml.Packaging;
-using DocumentFormat.OpenXml.Spreadsheet;
-using DocumentFormat.OpenXml;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using ClosedXML.Excel.Formatting;
+using ClosedXML.Utils;
+using DocumentFormat.OpenXml;
+using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Spreadsheet;
 using static ClosedXML.Excel.XLWorkbook;
 
 namespace ClosedXML.Excel.IO
@@ -44,7 +46,7 @@ namespace ClosedXML.Excel.IO
             else
                 defaultFormatId = 0;
 
-            context.SharedStyles.Add(defaultStyle,
+            context.AddSharedStyle(defaultStyle,
                 new StyleInfo
                 {
                     StyleId = defaultFormatId,
@@ -121,7 +123,7 @@ namespace ClosedXML.Excel.IO
                 var numberFormatId = context.SavedNumberFormats[xlStyle.NumberFormat.Format];
 
                 if (!context.SharedStyles.ContainsKey(xlStyle))
-                    context.SharedStyles.Add(xlStyle,
+                    context.AddSharedStyle(xlStyle,
                         new StyleInfo
                         {
                             StyleId = styleCount++,
@@ -158,8 +160,8 @@ namespace ClosedXML.Excel.IO
                 si.StyleId = (UInt32)styleId;
                 newSharedStyles.Add(ss.Key, si);
             }
-            context.SharedStyles.Clear();
-            newSharedStyles.ForEach(kp => context.SharedStyles.Add(kp.Key, kp.Value));
+            context.ClearSharedStyles();
+            newSharedStyles.ForEach(kp => context.AddSharedStyle(kp.Key, kp.Value));
 
             AddDifferentialFormats(workbookStylesPart, workbook, context);
         }
@@ -247,7 +249,6 @@ namespace ClosedXML.Excel.IO
             {
                 var emptyContainer = new XLStylizedEmpty(DefaultStyle);
 
-                var style = new XLStyle(emptyContainer, DefaultStyle);
                 OpenXmlHelper.LoadFont(df.Font, emptyContainer.Style.Font);
                 OpenXmlHelper.LoadBorder(df.Border, emptyContainer.Style.Border);
                 OpenXmlHelper.LoadNumberFormat(df.NumberingFormat, emptyContainer.Style.NumberFormat);
@@ -800,7 +801,7 @@ namespace ClosedXML.Excel.IO
                 ? new FontFamilyNumbering { Val = (Int32)fontInfo.Font.FontFamilyNumbering }
                 : null;
 
-            var fontCharSet = (fontInfo.Font.FontCharSet != XLFontValue.Default.FontCharSet || ignoreMod) && fontInfo.Font.FontCharSet != XLFontCharSet.Default
+            var fontCharSet = (fontInfo.Font.FontCharSet != XLFontValue.Default.FontCharSet || ignoreMod) && fontInfo.Font.FontCharSet != XLFontFormatValue.Default.Charset
                 ? new FontCharSet { Val = (Int32)fontInfo.Font.FontCharSet }
                 : null;
 
@@ -931,3 +932,4 @@ namespace ClosedXML.Excel.IO
         }
     }
 }
+#endif

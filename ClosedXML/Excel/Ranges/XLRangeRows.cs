@@ -1,21 +1,46 @@
 #nullable disable
 
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 
 namespace ClosedXML.Excel
 {
-    using System.Collections;
-
-    internal class XLRangeRows : XLStylizedBase, IXLRangeRows, IXLStylized
+    internal class XLRangeRows :
+#if !STYLES_REWORK
+        XLStylizedBase,
+#endif
+        IXLRangeRows
     {
+        private readonly XLWorksheet _worksheet;
         private readonly List<XLRangeRow> _ranges = new List<XLRangeRow>();
 
-        public XLRangeRows() : base(XLStyle.Default.Value)
+        public XLRangeRows(XLWorksheet worksheet)
+#if !STYLES_REWORK
+            : base(XLStyle.Default.Value)
+#endif
         {
+            _worksheet = worksheet;
+        }
+
+        internal XLCellFormat Format
+        {
+            get
+            {
+                var areas = _ranges.Select(x => XLBookArea.From(x.RangeAddress)).ToArray();
+                return XLCellFormat.ForAreas(_worksheet.Workbook, areas, null);
+            }
         }
 
         #region IXLRangeRows Members
+
+#if STYLES_REWORK
+        public IXLStyle Style
+        {
+            get => Format;
+            set => Format.SetStyle(value);
+        }
+#endif
 
         public IXLRangeRows Clear(XLClearOptions clearOptions = XLClearOptions.All)
         {
@@ -49,7 +74,7 @@ namespace ClosedXML.Excel
 
         public IXLCells Cells()
         {
-            var cells = new XLCells(false, XLCellsUsedOptions.AllContents);
+            var cells = new XLCells(_worksheet, false, XLCellsUsedOptions.AllContents);
             foreach (XLRangeRow container in _ranges)
                 cells.Add(container.RangeAddress);
             return cells;
@@ -57,7 +82,7 @@ namespace ClosedXML.Excel
 
         public IXLCells CellsUsed()
         {
-            var cells = new XLCells(true, XLCellsUsedOptions.AllContents);
+            var cells = new XLCells(_worksheet, true, XLCellsUsedOptions.AllContents);
             foreach (XLRangeRow container in _ranges)
                 cells.Add(container.RangeAddress);
             return cells;
@@ -66,14 +91,21 @@ namespace ClosedXML.Excel
 
         public IXLCells CellsUsed(XLCellsUsedOptions options)
         {
-            var cells = new XLCells(true, options);
+            var cells = new XLCells(_worksheet, true, options);
             foreach (XLRangeRow container in _ranges)
                 cells.Add(container.RangeAddress);
             return cells;
         }
 
+        public void Select()
+        {
+            foreach (var range in this)
+                range.Select();
+        }
+
         #endregion IXLRangeRows Members
 
+#if !STYLES_REWORK
         #region IXLStylized Members
 
         protected override IEnumerable<XLStylizedBase> Children
@@ -85,23 +117,17 @@ namespace ClosedXML.Excel
             }
         }
 
-
-        public override IXLRanges RangesUsed
+        public override IEnumerable<IXLRange> RangesUsed
         {
             get
             {
-                var retVal = new XLRanges();
+                var retVal = new XLRanges(_worksheet);
                 this.ForEach(c => retVal.Add(c.AsRange()));
                 return retVal;
             }
         }
 
         #endregion IXLStylized Members
-
-        public void Select()
-        {
-            foreach (var range in this)
-                range.Select();
-        }
+#endif
     }
 }

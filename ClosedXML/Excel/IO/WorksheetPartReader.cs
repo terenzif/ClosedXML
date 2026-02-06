@@ -26,12 +26,16 @@ internal class WorksheetPartReader
     };
 
     private readonly Dictionary<UInt32, String> _sharedFormulasR1C1 = new();
+
+    /// <summary>
+    /// Row number of last read <c>row</c> element.
+    /// </summary>
     private Int32 _lastRow;
     private Int32 _lastColumnNumber;
 
-    internal void LoadWorksheet(XLWorksheet ws, Stylesheet s, WorksheetPart worksheetPart, SharedStringItem[] sharedStrings, LoadContext context)
+    internal void LoadWorksheet(XLWorksheet ws, WorksheetPart worksheetPart, SharedStringItem[] sharedStrings, LoadContext context)
     {
-        var styleList = new Dictionary<int, IXLStyle>();// {{0, ws.Style}};
+        var styleList = new Dictionary<int, XLStyleValue>();// {{0, ws.Style}};
         PageSetupProperties pageSetupProperties = null;
 
         _lastRow = 0;
@@ -152,11 +156,16 @@ internal class WorksheetPartReader
         if (wsDefaultColumn != null && wsDefaultColumn.Width != null)
             ws.ColumnWidth = wsDefaultColumn.Width - XLConstants.ColumnWidthOffset;
 
-        Int32 styleIndexDefault = wsDefaultColumn != null && wsDefaultColumn.Style != null
-                                      ? Int32.Parse(wsDefaultColumn.Style.InnerText)
-                                      : -1;
-        if (styleIndexDefault >= 0)
-            ApplyStyle(ws, styleIndexDefault, ws.Workbook.Styles);
+        // Sheet doesn't have a format, only column spans have format. When whole sheet is selected
+        // to change format, Excel will mark all cols spans as having a particular format. Format
+        // is considered a sheet format when all columns have a format and it's in the last column.
+        var colSpanFormats = columns.Elements<Column>().Select(c => (MinColumn: c.Min?.Value, MaxColumn: c.Max?.Value, XfId: c.Style?.Value ?? 0)).ToArray();
+        var allColsHaveFormat = colSpanFormats.Sum(x => x.MaxColumn - x.MinColumn + 1) == XLHelper.MaxColumnNumber;
+        if (allColsHaveFormat)
+        {
+            var lastColumnXfId = colSpanFormats.Single(x => x.MaxColumn == XLHelper.MaxColumnNumber).XfId;
+            ApplyStyle(ws, checked((int)lastColumnXfId), ws.Workbook.Styles);
+        }
 
         foreach (Column col in columns.Elements<Column>())
         {
@@ -198,14 +207,17 @@ internal class WorksheetPartReader
     }
 
     private void LoadRow(XLWorksheet ws, SharedStringItem[] sharedStrings,
-                          Dictionary<Int32, IXLStyle> styleList,
+                          Dictionary<Int32, XLStyleValue> styleList,
                           OpenXmlPartReader reader)
     {
         Debug.Assert(reader.LocalName == "row");
 
         var attributes = reader.Attributes;
         var rowIndexAttr = attributes.GetAttribute("r");
+        
+        // Row number is an optional attribute. If not specified, it should be a next row from the last read row.
         var rowIndex = string.IsNullOrEmpty(rowIndexAttr) ? ++_lastRow : int.Parse(rowIndexAttr);
+        _lastRow = rowIndex;
 
         var xlRow = ws.Row(rowIndex, false);
 
@@ -274,13 +286,11 @@ internal class WorksheetPartReader
     }
 
     private void LoadCell(SharedStringItem[] sharedStrings,
-                          XLWorksheet ws, Dictionary<Int32, IXLStyle> styleList, OpenXmlPartReader reader, Int32 rowIndex)
+                          XLWorksheet ws, Dictionary<Int32, XLStyleValue> styleList, OpenXmlPartReader reader, Int32 rowIndex)
     {
         Debug.Assert(reader.LocalName == "c" && reader.IsStartElement);
 
         var attributes = reader.Attributes;
-
-        var styleIndex = attributes.GetIntAttribute("s") ?? 0;
 
         var cellAddress = attributes.GetCellRefAttribute("r") ?? new XLSheetPoint(rowIndex, _lastColumnNumber + 1);
         _lastColumnNumber = cellAddress.Column;
@@ -300,9 +310,12 @@ internal class WorksheetPartReader
 
         var xlCell = ws.Cell(cellAddress.Row, cellAddress.Column);
 
-        if (styleList.TryGetValue(styleIndex, out IXLStyle style))
+        var styleIndex = attributes.GetIntAttribute("s") ?? 0;
+        xlCell.FormatValue = ws.Workbook.Styles.CellFormats[styleIndex];
+
+        if (styleList.TryGetValue(styleIndex, out var styleValue))
         {
-            xlCell.InnerStyle = style;
+            xlCell.StyleValue = styleValue;
         }
         else
         {
@@ -397,7 +410,7 @@ internal class WorksheetPartReader
         }
 
         if (!styleList.ContainsKey(styleIndex))
-            styleList.Add(styleIndex, xlCell.Style);
+            styleList.Add(styleIndex, xlCell.StyleValue);
     }
 
     private XLCellFormula SetCellFormula(XLWorksheet ws, XLSheetPoint cellAddress, OpenXmlPartReader reader)
@@ -794,7 +807,7 @@ internal class WorksheetPartReader
         {
             var ranges = conditionalFormatting.SequenceOfReferences.Items
                 .Select(sor => ws.Range(sor.Value));
-            var conditionalFormat = new XLConditionalFormat(ranges);
+            var conditionalFormat = new XLConditionalFormat(ws, ranges);
 
             conditionalFormat.StopIfTrue = OpenXmlHelper.GetBooleanValueAsBool(fr.StopIfTrue, false);
 
@@ -968,8 +981,7 @@ internal class WorksheetPartReader
             if (String.IsNullOrWhiteSpace(txt)) continue;
             foreach (var rangeAddress in txt.Split(' '))
             {
-                var dvt = new XLDataValidation(ws.Range(rangeAddress));
-                ws.DataValidations.Add(dvt, skipIntersectionsCheck: true);
+                var dvt = ws.DataValidations.Create(XLSheetRange.Parse(rangeAddress));
                 if (dvs.AllowBlank != null) dvt.IgnoreBlanks = dvs.AllowBlank;
                 if (dvs.ShowDropDown != null) dvt.InCellDropdown = !dvs.ShowDropDown.Value;
                 if (dvs.ShowErrorMessage != null) dvt.ShowErrorMessage = dvs.ShowErrorMessage;
@@ -1156,8 +1168,7 @@ internal class WorksheetPartReader
             if (String.IsNullOrWhiteSpace(txt)) continue;
             foreach (var rangeAddress in txt.Split(' '))
             {
-                var dvt = new XLDataValidation(ws.Range(rangeAddress));
-                ws.DataValidations.Add(dvt, skipIntersectionsCheck: true);
+                var dvt = ws.DataValidations.Create(XLSheetRange.Parse(rangeAddress));
                 if (dvs.AllowBlank != null) dvt.IgnoreBlanks = dvs.AllowBlank;
                 if (dvs.ShowDropDown != null) dvt.InCellDropdown = !dvs.ShowDropDown.Value;
                 if (dvs.ShowErrorMessage != null) dvt.ShowErrorMessage = dvs.ShowErrorMessage;
@@ -1237,19 +1248,52 @@ internal class WorksheetPartReader
         }
     }
 
-    private static void ApplyStyle(IXLStylized xlStylized, Int32 styleIndex, XLWorkbookStyles styles)
+    private static void ApplyStyle(XLWorksheet sheet, Int32 styleIndex, XLWorkbookStyles styles)
+    {
+        ApplyStyle(styleValue =>
+        {
+            sheet.StyleValue = styleValue;
+            sheet.FormatValue = styles.CellFormats[styleIndex];
+        }, styleIndex, styles);
+    }
+    
+    private static void ApplyStyle(XLRow row, Int32 styleIndex, XLWorkbookStyles styles)
+    {
+        ApplyStyle(styleValue =>
+        {
+            row.StyleValue = styleValue;
+            row.FormatValue = styles.CellFormats[styleIndex];
+        }, styleIndex, styles);
+    }
+
+    private static void ApplyStyle(XLCell cell, Int32 styleIndex, XLWorkbookStyles styles)
+    {
+        ApplyStyle(styleValue =>
+        {
+            cell.StyleValue = styleValue;
+            cell.FormatValue = styles.CellFormats[styleIndex];
+        }, styleIndex, styles);
+    }
+
+    private static void ApplyStyle(Action<XLStyleValue> setStyle, Int32 styleIndex, XLWorkbookStyles styles)
+    {
+        var xlStyleKey = XLStyle.Default.Key;
+        XLWorkbook.LoadStyle(ref xlStyleKey, styleIndex, styles);
+        var styleValue = XLStyleValue.FromKey(ref xlStyleKey);
+        setStyle(styleValue);
+    }
+
+    private static void ApplyStyle(XLColumns columns, Int32 styleIndex, XLWorkbookStyles styles)
     {
         var xlStyleKey = XLStyle.Default.Key;
         XLWorkbook.LoadStyle(ref xlStyleKey, styleIndex, styles);
 
         // When loading columns we must propagate style to each column but not deeper. In other cases we do not propagate at all.
-        if (xlStylized is IXLColumns columns)
+        var styleValue = XLStyleValue.FromKey(ref xlStyleKey);
+        columns.Cast<XLColumn>().ForEach(col =>
         {
-            columns.Cast<XLColumn>().ForEach(col => col.InnerStyle = new XLStyle(col, xlStyleKey));
-        }
-        else
-        {
-            xlStylized.InnerStyle = new XLStyle(xlStylized, xlStyleKey);
-        }
+            col.StyleValue = styleValue;
+            col.FormatValue = styles.CellFormats[styleIndex];
+        });
     }
 }

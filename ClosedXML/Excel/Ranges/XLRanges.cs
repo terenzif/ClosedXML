@@ -1,20 +1,28 @@
-using ClosedXML.Excel.Ranges.Index;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using ClosedXML.Excel.Ranges.Index;
 
 namespace ClosedXML.Excel
 {
-    using System.Collections;
-
-    internal class XLRanges : XLStylizedBase, IXLRanges, IXLStylized
+    internal class XLRanges :
+#if !STYLES_REWORK
+        XLStylizedBase,
+#endif
+        IXLRanges
     {
+        private readonly XLWorkbook _workbook;
+
         /// <summary>
         /// Normally, XLRanges collection includes ranges from a single worksheet, but not necessarily.
         /// </summary>
         private readonly Dictionary<IXLWorksheet, IXLRangeIndex<XLRange>> _indexes;
         private IEnumerable<XLRange> Ranges => _indexes.Values.SelectMany(index => index.GetAll());
+
+#if !STYLES_REWORK
         private bool _styleInitialized = false;
+#endif
 
         private IXLRangeIndex<XLRange> GetRangeIndex(IXLWorksheet worksheet)
         {
@@ -27,12 +35,39 @@ namespace ClosedXML.Excel
             return rangeIndex;
         }
 
-        public XLRanges() : base(XLWorkbook.DefaultStyleValue)
+        public XLRanges(XLWorksheet worksheet)
+            : this(worksheet.Workbook)
         {
+        }
+
+        public XLRanges(XLWorkbook workbook)
+#if !STYLES_REWORK
+            : base(XLWorkbook.DefaultStyleValue)
+#endif
+        {
+            _workbook = workbook;
             _indexes = new Dictionary<IXLWorksheet, IXLRangeIndex<XLRange>>();
         }
 
+        internal XLCellFormat Format
+        {
+            get
+            {
+                var sheet = Ranges.FirstOrDefault()?.Worksheet;
+                var areas = Ranges.Select(x => XLBookArea.From(x.RangeAddress)).ToArray();
+                return XLCellFormat.ForAreas(_workbook, areas, sheet);
+            }
+        }
+
         #region IXLRanges Members
+
+#if STYLES_REWORK
+        public IXLStyle Style
+        {
+            get => Format;
+            set => Format.SetStyle(value);
+        }
+#endif
 
         IXLCells IXLRanges.Cells() => Cells();
 
@@ -47,6 +82,7 @@ namespace ClosedXML.Excel
             if (GetRangeIndex(range.Worksheet).Add(range))
                 Count++;
 
+#if !STYLES_REWORK
             if (_styleInitialized)
                 return;
 
@@ -56,6 +92,7 @@ namespace ClosedXML.Excel
 
             InnerStyle = worksheetStyle;
             _styleInitialized = true;
+#endif
         }
 
         public void Add(IXLRangeBase range)
@@ -193,7 +230,7 @@ namespace ClosedXML.Excel
 
         public XLCells Cells()
         {
-            var cells = new XLCells(false, XLCellsUsedOptions.AllContents);
+            var cells = new XLCells(_workbook, false, XLCellsUsedOptions.AllContents);
             foreach (XLRange container in Ranges)
                 cells.Add(container.RangeAddress);
             return cells;
@@ -201,7 +238,7 @@ namespace ClosedXML.Excel
 
         public IXLCells CellsUsed()
         {
-            var cells = new XLCells(true, XLCellsUsedOptions.AllContents);
+            var cells = new XLCells(_workbook, true, XLCellsUsedOptions.AllContents);
             foreach (XLRange container in Ranges)
                 cells.Add(container.RangeAddress);
             return cells;
@@ -209,7 +246,7 @@ namespace ClosedXML.Excel
 
         public IXLCells CellsUsed(XLCellsUsedOptions options)
         {
-            var cells = new XLCells(true, options);
+            var cells = new XLCells(_workbook, true, options);
             foreach (XLRange container in Ranges)
                 cells.Add(container.RangeAddress);
             return cells;
@@ -217,23 +254,15 @@ namespace ClosedXML.Excel
 
         #endregion IXLRanges Members
 
+#if !STYLES_REWORK
         #region IXLStylized Members
 
-        protected override IEnumerable<XLStylizedBase> Children
-        {
-            get
-            {
-                foreach (XLRange rng in Ranges)
-                    yield return rng;
-            }
-        }
+        protected override IEnumerable<XLStylizedBase> Children => Ranges;
 
-        public override IXLRanges RangesUsed
-        {
-            get { return this; }
-        }
+        public override IEnumerable<IXLRange> RangesUsed => this;
 
         #endregion IXLStylized Members
+#endif
 
         public override string ToString()
         {
@@ -264,13 +293,12 @@ namespace ClosedXML.Excel
         public IXLDataValidation CreateDataValidation()
         {
             var firstRange = Ranges.First();
-            var dataValidation = new XLDataValidation(firstRange);
+             var dataValidation = firstRange.Worksheet.DataValidations.Create(firstRange.SheetRange);
             foreach (var range in Ranges.Skip(1))
             {
                 dataValidation.AddRange(range);
             }
 
-            firstRange.Worksheet.DataValidations.Add(dataValidation);
             return dataValidation;
         }
 
@@ -288,7 +316,7 @@ namespace ClosedXML.Excel
 
         public IXLRanges Consolidate()
         {
-            var engine = new XLRangeConsolidationEngine(this);
+            var engine = new XLRangeConsolidationEngine(_workbook, this);
             return engine.Consolidate();
         }
     }

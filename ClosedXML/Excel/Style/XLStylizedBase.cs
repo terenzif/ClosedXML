@@ -3,7 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.CompilerServices;
+using ClosedXML.Utils;
 
 namespace ClosedXML.Excel
 {
@@ -17,12 +17,13 @@ namespace ClosedXML.Excel
         /// <summary>
         /// Read-only style property.
         /// </summary>
-        internal virtual XLStyleValue StyleValue { get; private protected set; }
+        public virtual XLStyleValue StyleValue { get; set; }
 
         /// <inheritdoc cref="IXLStylized.StyleValue"/>
         XLStyleValue IXLStylized.StyleValue
         {
-            get { return StyleValue; }
+            get => StyleValue;
+            set => StyleValue = value;
         }
 
         /// <inheritdoc cref="IXLStylized.Style"/>
@@ -44,7 +45,7 @@ namespace ClosedXML.Excel
         /// </summary>
         protected abstract IEnumerable<XLStylizedBase> Children { get; }
 
-        public abstract IXLRanges RangesUsed { get; }
+        public abstract IEnumerable<IXLRange> RangesUsed { get; }
 
         #endregion Properties
 
@@ -85,12 +86,10 @@ namespace ClosedXML.Excel
             }
         }
 
-        private static ReferenceEqualityComparer<XLStyleValue> _comparer = new ReferenceEqualityComparer<XLStyleValue>();
-
         void IXLStylized.ModifyStyle(Func<XLStyleKey, XLStyleKey> modification)
         {
             var children = GetChildrenRecursively(this)
-                .GroupBy(child => child.StyleValue, _comparer);
+                .GroupBy(child => child.StyleValue, ReferenceEqualityComparer<XLStyleValue>.Instance);
 
             foreach (var group in children)
             {
@@ -121,16 +120,5 @@ namespace ClosedXML.Excel
         }
 
         #endregion Private methods
-
-        #region Nested classes
-
-        public sealed class ReferenceEqualityComparer<T> : IEqualityComparer<T> where T : class
-        {
-            public bool Equals(T x, T y) => ReferenceEquals(x, y);
-
-            public int GetHashCode(T obj) => RuntimeHelpers.GetHashCode(obj);
-        }
-
-        #endregion Nested classes
     }
 }

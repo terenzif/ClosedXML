@@ -5,14 +5,10 @@ namespace ClosedXML.Excel
 {
     internal class XLCFEndsWithConverter : IXLCFConverter
     {
-        public ConditionalFormattingRule Convert(IXLConditionalFormat cf, int priority, XLWorkbook.SaveContext context)
+        public ConditionalFormattingRule Convert(XLConditionalFormat cf, int priority, XLWorkbook.SaveContext context)
         {
             String val = cf.Values[1].Value;
-            var conditionalFormattingRule = XLCFBaseConverter.Convert(cf, priority);
-            var cfStyle = ((XLStyle)cf.Style).Value;
-            if (!cfStyle.Equals(XLWorkbook.DefaultStyleValue))
-                conditionalFormattingRule.FormatId = (UInt32)context.DifferentialFormats[cfStyle];
-
+            var conditionalFormattingRule = XLCFBaseConverter.ConvertWithDxf(cf, priority, context);
             conditionalFormattingRule.Operator = ConditionalFormattingOperatorValues.EndsWith;
             conditionalFormattingRule.Text = val;
 

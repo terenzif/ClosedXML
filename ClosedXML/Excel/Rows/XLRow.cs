@@ -1,14 +1,13 @@
-using ClosedXML.Graphics;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using ClosedXML.Excel.Formatting;
+using ClosedXML.Graphics;
 
 namespace ClosedXML.Excel
 {
-    internal sealed class XLRow : XLRangeBase, IXLRow
+    internal sealed class XLRow : XLRangeBase, IXLRow, IXLFormatContainer
     {
-        #region Private fields
-
         /// <summary>
         /// Don't use directly, use properties.
         /// </summary>
@@ -16,28 +15,29 @@ namespace ClosedXML.Excel
         private Double _height;
         private Int32 _outlineLevel;
 
-        #endregion Private fields
-
-        #region Constructor
-
         /// <summary>
         /// The direct constructor should only be used in <see cref="XLWorksheet.RangeFactory"/>.
         /// </summary>
         public XLRow(XLWorksheet worksheet, Int32 row)
+#if STYLES_REWORK
+            : base(XLRangeAddress.EntireRow(worksheet, row))
+#else
             : base(XLRangeAddress.EntireRow(worksheet, row), worksheet.StyleValue)
+#endif
         {
             SetRowNumber(row);
 
             _height = worksheet.RowHeight;
         }
 
-        #endregion Constructor
+        internal XLRowArea Area => new XLRowArea(Worksheet.Name, RowNumber());
 
         public override XLRangeType RangeType
         {
             get { return XLRangeType.Row; }
         }
 
+#if !STYLES_REWORK
         protected override IEnumerable<XLStylizedBase> Children
         {
             get
@@ -48,6 +48,7 @@ namespace ClosedXML.Excel
                     yield return cell;
             }
         }
+#endif
 
         public Boolean Collapsed
         {
@@ -170,7 +171,7 @@ namespace ClosedXML.Excel
             {
                 var internalRow = Worksheet.Internals.RowsCollection[newRow.RowNumber()];
                 internalRow._height = Height;
-                internalRow.InnerStyle = InnerStyle;
+                internalRow.StyleValue = StyleValue;
                 internalRow.Collapsed = Collapsed;
                 internalRow.IsHidden = IsHidden;
                 internalRow._outlineLevel = OutlineLevel;
@@ -228,7 +229,7 @@ namespace ClosedXML.Excel
 
         public override XLCells Cells(String cellsInRow)
         {
-            var retVal = new XLCells(false, XLCellsUsedOptions.AllContents);
+            var retVal = new XLCells(Worksheet, false, XLCellsUsedOptions.AllContents);
             var rangePairs = cellsInRow.Split(',');
             foreach (string pair in rangePairs)
                 retVal.Add(Range(pair.Trim()).RangeAddress);
@@ -491,7 +492,7 @@ namespace ClosedXML.Excel
             var newRow = (XLRow)row;
             newRow._height = _height;
             newRow.HeightChanged = HeightChanged;
-            newRow.InnerStyle = GetStyle();
+            newRow.StyleValue = StyleValue;
             newRow.IsHidden = IsHidden;
 
             AsRange().CopyTo(row);
@@ -511,7 +512,7 @@ namespace ClosedXML.Excel
 
         public IXLRangeRows Rows(String rows)
         {
-            var retVal = new XLRangeRows();
+            var retVal = new XLRangeRows(Worksheet);
             var rowPairs = rows.Split(',');
             foreach (string pair in rowPairs)
                 AsRange().Rows(pair.Trim()).ForEach(retVal.Add);
@@ -532,6 +533,19 @@ namespace ClosedXML.Excel
         }
 
         #endregion IXLRow Members
+
+
+        #region IXLFormatContainer
+
+        /// <remarks>
+        /// Format of a row or <c>null</c> for not defined format.
+        /// </remarks>
+        /// <inheritdoc cref="IXLFormatContainer.FormatValue"/>
+        public XLCellFormatValue? FormatValue { get; set; }
+
+        internal override XLCellFormat Format => XLCellFormat.ForRow(this);
+
+        #endregion
 
         public override XLRange AsRange()
         {
@@ -583,15 +597,6 @@ namespace ClosedXML.Excel
         public IXLRow AdjustToContents()
         {
             return AdjustToContents(1);
-        }
-
-        internal void SetStyleNoColumns(IXLStyle value)
-        {
-            InnerStyle = value;
-
-            int row = RowNumber();
-            foreach (XLCell c in Worksheet.Internals.CellsCollection.GetCellsInRow(row))
-                c.InnerStyle = value;
         }
 
         private XLRow RowShift(Int32 rowsToShift)
@@ -670,6 +675,15 @@ namespace ClosedXML.Excel
         {
             return false;
         }
+
+#if STYLES_REWORK
+        // TODO Styles: Replace with FormatValue during cut-over
+        internal XLStyleValue StyleValue
+        {
+            get;
+            set;
+        } = null!;
+#endif
 
         /// <summary>
         /// Flag enum to save space, instead of wasting byte for each flag.

@@ -1,10 +1,11 @@
 #nullable disable
 
-using DocumentFormat.OpenXml.Packaging;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using ClosedXML.Excel.Formatting;
+using DocumentFormat.OpenXml.Packaging;
 
 namespace ClosedXML.Excel
 {
@@ -14,19 +15,24 @@ namespace ClosedXML.Excel
 
         internal sealed class SaveContext
         {
+#if !STYLES_REWORK
+            private readonly Dictionary<XLStyleValue, StyleInfo> _sharedStyles;
+#endif
+
             public SaveContext()
             {
-                DifferentialFormats = new Dictionary<XLStyleValue, int>();
                 RelIdGenerator = new RelIdGenerator();
                 SharedFonts = new Dictionary<XLFontValue, FontInfo>();
                 SavedNumberFormats = new Dictionary<string, int>();
-                SharedStyles = new Dictionary<XLStyleValue, StyleInfo>();
+#if !STYLES_REWORK
+                DifferentialFormats = new Dictionary<XLStyleValue, int>();
+                _sharedStyles = new Dictionary<XLStyleValue, StyleInfo>();
+#endif
                 TableId = 0;
                 TableNames = new HashSet<String>();
                 PivotSourceCacheId = 0;
             }
 
-            public Dictionary<XLStyleValue, Int32> DifferentialFormats { get; private set; }
             public RelIdGenerator RelIdGenerator { get; private set; }
             public Dictionary<XLFontValue, FontInfo> SharedFonts { get; private set; }
 
@@ -37,7 +43,16 @@ namespace ClosedXML.Excel
             /// </summary>
             public Dictionary<string, int> SavedNumberFormats { get; }
 
-            public Dictionary<XLStyleValue, StyleInfo> SharedStyles { get; private set; }
+#if !STYLES_REWORK
+            public IReadOnlyDictionary<XLStyleValue, StyleInfo> SharedStyles => _sharedStyles;
+
+            public Dictionary<XLStyleValue, Int32> DifferentialFormats { get; }
+
+#endif
+            internal Dictionary<XLCellFormatValue, uint> FormatMap = new();
+
+            internal Dictionary<XLDxfValue, uint> DxfMap = new();
+
             public uint TableId { get; set; }
             public HashSet<string> TableNames { get; private set; }
 
@@ -79,7 +94,61 @@ namespace ClosedXML.Excel
 
                 return SavedNumberFormats[numberFormat.Format];
             }
-            #nullable disable
+
+            internal UInt32 GetDxfId(XLStyleValue dxf)
+            {
+#if STYLES_REWORK
+                throw new NotImplementedException();
+#else
+                return (UInt32)DifferentialFormats[dxf];
+#endif
+            }
+
+            internal uint? GetDxfId(XLDxfValue? dxf)
+            {
+                if (dxf is null)
+                    return null;
+
+                return DxfMap[dxf];
+            }
+
+            internal bool TryGetDxfId(XLStyleValue dxf, out uint dxfId)
+            {
+#if STYLES_REWORK
+                throw new NotImplementedException();
+#else
+                if (DifferentialFormats.TryGetValue(dxf, out var differentialFormatId))
+                {
+                    dxfId = (uint)differentialFormatId;
+                    return true;
+                }
+
+                dxfId = default;
+                return false;
+#endif
+            }
+
+            internal uint GetStyleId(XLStyleValue style, XLCellFormatValue? format)
+            {
+#if STYLES_REWORK
+                return format is not null ? FormatMap[format] : 0;
+#else
+                return _sharedStyles[style].StyleId;
+#endif
+            }
+
+#if !STYLES_REWORK
+            internal void AddSharedStyle(XLStyleValue style, StyleInfo info)
+            {
+                _sharedStyles.Add(style, info);
+            }
+
+            internal void ClearSharedStyles()
+            {
+                _sharedStyles.Clear();
+            }
+#endif
+#nullable disable
         }
 
         #endregion Nested type: SaveContext
@@ -172,6 +241,7 @@ namespace ClosedXML.Excel
 
         #endregion Nested type: FontInfo
 
+#if !STYLES_REWORK
         #region Nested type: FillInfo
 
         internal struct FillInfo
@@ -206,5 +276,6 @@ namespace ClosedXML.Excel
         }
 
         #endregion Nested type: StyleInfo
+#endif
     }
 }

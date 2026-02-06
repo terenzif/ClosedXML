@@ -10,7 +10,6 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using ClosedXML.Excel.Formatting;
 using static ClosedXML.Excel.XLProtectionAlgorithm;
 
 namespace ClosedXML.Excel
@@ -134,7 +133,7 @@ namespace ClosedXML.Excel
 
         internal SharedStringTable SharedStringTable { get; } = new();
 
-        internal XLWorkbookStyles Styles { get; set; } = new();
+        internal XLWorkbookStyles Styles { get; }
 
         #region Nested Type : XLLoadSource
 
@@ -670,7 +669,7 @@ namespace ClosedXML.Excel
 
         public IXLCells FindCells(Func<IXLCell, Boolean> predicate)
         {
-            var cells = new XLCells(false, XLCellsUsedOptions.AllContents);
+            var cells = new XLCells(this, false, XLCellsUsedOptions.AllContents);
             foreach (XLWorksheet ws in WorksheetsInternal)
             {
                 foreach (XLCell cell in ws.CellsUsed(XLCellsUsedOptions.All))
@@ -684,7 +683,7 @@ namespace ClosedXML.Excel
 
         public IXLRows FindRows(Func<IXLRow, Boolean> predicate)
         {
-            var rows = new XLRows(worksheet: null);
+            var rows = new XLRows(this, worksheet: null, defaultStyleSheet: null);
             foreach (XLWorksheet ws in WorksheetsInternal)
             {
                 foreach (IXLRow row in ws.Rows().Where(predicate))
@@ -695,7 +694,7 @@ namespace ClosedXML.Excel
 
         public IXLColumns FindColumns(Func<IXLColumn, Boolean> predicate)
         {
-            var columns = new XLColumns(worksheet: null);
+            var columns = new XLColumns(this, worksheet: null, defaultStyleSheet: null);
             foreach (XLWorksheet ws in WorksheetsInternal)
             {
                 foreach (IXLColumn column in ws.Columns().Where(predicate))
@@ -741,6 +740,7 @@ namespace ClosedXML.Excel
         internal XLWorkbook(String file, Boolean asTemplate)
             : this(new LoadOptions())
         {
+            Styles = new XLWorkbookStyles();
             LoadSheetsFromTemplate(file);
         }
 
@@ -759,6 +759,7 @@ namespace ClosedXML.Excel
             _loadSource = XLLoadSource.File;
             _originalFile = file;
             _spreadsheetDocumentType = GetSpreadsheetDocumentType(_originalFile);
+            Styles = new XLWorkbookStyles();
             Load(file);
 
             if (loadOptions.RecalculateAllFormulas)
@@ -779,6 +780,7 @@ namespace ClosedXML.Excel
         {
             _loadSource = XLLoadSource.Stream;
             _originalStream = stream;
+            Styles = new XLWorkbookStyles();
             Load(stream);
 
             if (loadOptions.RecalculateAllFormulas)
@@ -797,6 +799,7 @@ namespace ClosedXML.Excel
             Protection = new XLWorkbookProtection(DefaultProtectionAlgorithm);
             DefaultRowHeight = 15;
             DefaultColumnWidth = 8.43;
+            Styles = XLWorkbookStyles.CreateInitialized();
             Style = new XLStyle(null, DefaultStyle);
             RowHeight = DefaultRowHeight;
             ColumnWidth = DefaultColumnWidth;
@@ -862,7 +865,7 @@ namespace ClosedXML.Excel
 
         public IXLRanges Ranges(String ranges)
         {
-            var retVal = new XLRanges();
+            var retVal = new XLRanges(this);
             var rangePairs = ranges.Split(',');
             foreach (var range in rangePairs.Select(r => Range(r.Trim())).Where(range => range != null))
             {
@@ -1139,5 +1142,7 @@ namespace ClosedXML.Excel
                     throw new NotImplementedException();
             }
         }
+
+        internal XLCellFormat Format => XLCellFormat.ForWorkbook(this);
     }
 }
