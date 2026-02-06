@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" Version="2.88.6" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ClosedXML\ClosedXML.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\Fonts\CarlitoBare-Bold.ttf" />
+    <EmbeddedResource Include="Resources\Fonts\CarlitoBare-BoldItalic.ttf" />
+    <EmbeddedResource Include="Resources\Fonts\CarlitoBare-Italic.ttf" />
+    <EmbeddedResource Include="Resources\Fonts\CarlitoBare-Regular.ttf" />
+  </ItemGroup>
+
+</Project>

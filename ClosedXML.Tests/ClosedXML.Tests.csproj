@@ -31,6 +31,7 @@
   <ItemGroup>
     <ProjectReference Include="..\ClosedXML\ClosedXML.csproj" />
     <ProjectReference Include="..\ClosedXML.Examples\ClosedXML.Examples.csproj" />
+    <ProjectReference Include="..\ClosedXML.Graphic.SixLabors\ClosedXML.Graphic.SixLabors.csproj" />
   </ItemGroup>
 
   <ItemGroup>
