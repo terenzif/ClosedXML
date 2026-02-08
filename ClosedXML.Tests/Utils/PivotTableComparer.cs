@@ -1,4 +1,4 @@
-﻿using ClosedXML.Excel;
+using ClosedXML.Excel;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -78,7 +78,28 @@ namespace ClosedXML.Tests
                 && x.ShowColumnHeaders.Equals(y.ShowColumnHeaders)
                 && x.ShowRowStripes.Equals(y.ShowRowStripes)
                 && x.ShowColumnStripes.Equals(y.ShowColumnStripes)
-                && x.Theme.Equals(y.Theme);
+                && x.Theme.Equals(y.Theme)
+                && FormatsAreEqual(x.Formats, y.Formats);
+        }
+
+        private static bool FormatsAreEqual(IReadOnlyList<XLPivotFormat> x, IReadOnlyList<XLPivotFormat> y)
+        {
+            if (x.Count != y.Count)
+                return false;
+
+            for (int i = 0; i < x.Count; i++)
+            {
+                if (x[i].Action != y[i].Action)
+                    return false;
+
+                if (!x[i].DxfStyleValue.Equals(y[i].DxfStyleValue))
+                    return false;
+
+                if (!XLPivotAreaComparer.Instance.Equals(x[i].PivotArea, y[i].PivotArea))
+                    return false;
+            }
+
+            return true;
         }
 
         public int GetHashCode(XLPivotTable obj)

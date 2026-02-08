@@ -26,4 +26,13 @@ internal class XLPivotFormat
     /// until we get better dxf representation.
     /// </summary>
     internal XLStyleValue DxfStyleValue { get; set; } = XLStyle.Default.Value;
+
+    internal XLPivotFormat Clone()
+    {
+        return new XLPivotFormat(PivotArea.Clone())
+        {
+            Action = Action,
+            DxfStyleValue = DxfStyleValue
+        };
+    }
 }
