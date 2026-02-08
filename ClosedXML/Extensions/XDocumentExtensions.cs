@@ -7,9 +7,15 @@ namespace ClosedXML.Excel
 {
     internal static class XDocumentExtensions
     {
+        private static readonly XmlReaderSettings SafeSettings = new XmlReaderSettings
+        {
+            DtdProcessing = DtdProcessing.Prohibit,
+            XmlResolver = null
+        };
+
         public static XDocument? Load(Stream stream)
         {
-            using (XmlReader reader = XmlReader.Create(stream))
+            using (XmlReader reader = XmlReader.Create(stream, SafeSettings))
             {
                 try
                 {
