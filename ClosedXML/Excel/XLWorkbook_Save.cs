@@ -195,7 +195,7 @@ namespace ClosedXML.Excel
                                          context.RelIdGenerator.GetNext(RelType.Workbook));
 
 #if STYLES_REWORK
-            new StylesWriter().WriteContent(workbookStylesPart, XmlToEnumMapper.Instance, Styles, context);
+            new StylesWriter().WriteContent(workbookStylesPart, XmlToEnumMapper.Instance, Styles, this, context);
 #else
             WorkbookStylesPartWriter.GenerateContent(workbookStylesPart, this, context);
 #endif
