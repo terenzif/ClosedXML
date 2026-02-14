@@ -16,7 +16,7 @@ internal class FormatResolver
 
     public FormatResolver(XLWorksheet worksheet)
     {
-        _defaultFormat = worksheet.Workbook.Styles.DefaultFormat;
+        _defaultFormat = worksheet.Workbook.Styles.GetDefaultFormat();
         _worksheet = worksheet;
         _columns = worksheet.Internals.ColumnsCollection;
         _rows = worksheet.Internals.RowsCollection;

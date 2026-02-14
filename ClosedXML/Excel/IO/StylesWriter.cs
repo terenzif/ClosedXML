@@ -111,7 +111,7 @@ internal class StylesWriter
             WriteNumberFormats(xml, numberFormatMap);
 
         // Fonts. Register default format font as font zero. The font zero is used for font name and size.
-        var fontFormatsMap = SequentialMap<int, XLFontFormatValue>.Create(usedFonts, styles.Fonts, 0, styles.DefaultFormat.Font);
+        var fontFormatsMap = SequentialMap<int, XLFontFormatValue>.Create(usedFonts, styles.Fonts, 0, styles.GetDefaultFormat().Font);
         if (fontFormatsMap.Count > 0)
             WriteFonts(xml, fontFormatsMap);
 
@@ -138,7 +138,7 @@ internal class StylesWriter
         if (cellStylesMap.Count > 0)
             WriteCellStyleXfs(xml, cellStylesMap, numberFormatMap, fontFormatsMap, fillsFormatsMap, borderFormatsMap);
 
-        var cellXfsMap = SequentialMap<int, XLCellFormatValue>.Create(usedCellFormats, styles.CellFormats, 0, styles.DefaultFormat);
+        var cellXfsMap = SequentialMap<int, XLCellFormatValue>.Create(usedCellFormats, styles.CellFormats, 0, styles.GetDefaultFormat());
         if (cellXfsMap.Count > 0)
             WriteCellXfs(xml, cellXfsMap, numberFormatMap, fontFormatsMap, fillsFormatsMap, borderFormatsMap, cellStylesMap);
 
