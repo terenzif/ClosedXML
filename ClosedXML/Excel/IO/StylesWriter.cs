@@ -61,19 +61,19 @@ internal class StylesWriter
             if (worksheet.FormatValue is not null)
                 usedCellFormats.Add(worksheet.FormatValue);
 
-            foreach (var column in worksheet.Internals.ColumnsCollection.Values)
+            foreach (var column in worksheet.Internals.ColumnsCollection.Values
+                .Where(c => c.FormatValue is not null))
             {
-                if (column.FormatValue is not null)
-                    usedCellFormats.Add(column.FormatValue);
+                usedCellFormats.Add(column.FormatValue!);
             }
 
-            foreach (var row in worksheet.Internals.RowsCollection.Values)
+            foreach (var row in worksheet.Internals.RowsCollection.Values
+                .Where(r => r.FormatValue is not null))
             {
-                if (row.FormatValue is not null)
-                    usedCellFormats.Add(row.FormatValue);
+                usedCellFormats.Add(row.FormatValue!);
             }
 
-            var enumerator = worksheet.Internals.CellsCollection.FormatSlice.GetEnumerator(XLSheetRange.Full);
+            using var enumerator = worksheet.Internals.CellsCollection.FormatSlice.GetEnumerator(XLSheetRange.Full);
             while (enumerator.MoveNext())
             {
                 var format = worksheet.Internals.CellsCollection.FormatSlice.GetFormat(enumerator.Current);
