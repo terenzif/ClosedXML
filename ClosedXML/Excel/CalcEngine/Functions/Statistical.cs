@@ -468,8 +468,8 @@ namespace ClosedXML.Excel.CalcEngine
             }
             else
             {
-                values = reference.GetCellsValues(ctx);
-                size = reference.NumberOfCells;
+                values = ctx.GetNonBlankValues(reference);
+                size = 0;
             }
 
             // Pre-allocate array to reduce allocations during doubling of buffer.
