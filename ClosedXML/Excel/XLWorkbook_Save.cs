@@ -372,11 +372,17 @@ namespace ClosedXML.Excel
 
                 vmlStream.Position = 0;
 
-                using (var writer = new XmlTextWriter(vmlStream, Encoding.UTF8))
+                var settings = new XmlWriterSettings
                 {
-                    var contents = xdoc.ToString();
-                    writer.WriteRaw(contents);
-                    vmlStream.SetLength(contents.Length);
+                    Encoding = Encoding.UTF8,
+                    OmitXmlDeclaration = true,
+                    Indent = true
+                };
+                using (var writer = XmlWriter.Create(vmlStream, settings))
+                {
+                    xdoc.Save(writer);
+                    writer.Flush();
+                    vmlStream.SetLength(vmlStream.Position);
                 }
 
                 return xdoc.Root.HasElements;
