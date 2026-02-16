@@ -52,11 +52,36 @@ internal class StylesWriter
 
     private readonly string _ns = Main2006SsNs;
 
-    internal void WriteContent(WorkbookStylesPart stylesPart, IEnumMapper mapper, XLWorkbookStyles styles, XLWorkbook.SaveContext context)
+    internal void WriteContent(WorkbookStylesPart stylesPart, IEnumMapper mapper, XLWorkbookStyles styles, XLWorkbook workbook, XLWorkbook.SaveContext context)
     {
         // Determine which format components are used and thus should be saved.
-        // TODO: For now just assume everything in styles is used
-        var usedCellFormats = styles.CellFormats.Select(x => x.Value).ToHashSet();
+        var usedCellFormats = new HashSet<XLCellFormatValue> { styles.DefaultFormat };
+        foreach (var worksheet in workbook.WorksheetsInternal)
+        {
+            if (worksheet.FormatValue is not null)
+                usedCellFormats.Add(worksheet.FormatValue);
+
+            foreach (var column in worksheet.Internals.ColumnsCollection.Values
+                .Where(c => c.FormatValue is not null))
+            {
+                usedCellFormats.Add(column.FormatValue!);
+            }
+
+            foreach (var row in worksheet.Internals.RowsCollection.Values
+                .Where(r => r.FormatValue is not null))
+            {
+                usedCellFormats.Add(row.FormatValue!);
+            }
+
+            using var enumerator = worksheet.Internals.CellsCollection.FormatSlice.GetEnumerator(XLSheetRange.Full);
+            while (enumerator.MoveNext())
+            {
+                var format = worksheet.Internals.CellsCollection.FormatSlice.GetFormat(enumerator.Current);
+                if (format is not null)
+                    usedCellFormats.Add(format);
+            }
+        }
+
         var usedNumberFormats = new HashSet<string>();
         var usedFonts = new HashSet<XLFontFormatValue>();
         var usedFills = new HashSet<XLFillFormatValue>();
