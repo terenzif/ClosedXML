@@ -87,4 +87,27 @@ internal class XLPivotArea
     {
         _references.Add(reference);
     }
+
+    internal XLPivotArea Clone()
+    {
+        var clone = new XLPivotArea
+        {
+            Field = Field,
+            Type = Type,
+            DataOnly = DataOnly,
+            LabelOnly = LabelOnly,
+            GrandRow = GrandRow,
+            GrandCol = GrandCol,
+            CacheIndex = CacheIndex,
+            Outline = Outline,
+            Offset = Offset,
+            CollapsedLevelsAreSubtotals = CollapsedLevelsAreSubtotals,
+            Axis = Axis,
+            FieldPosition = FieldPosition
+        };
+        foreach (var reference in References)
+            clone.AddReference(reference.Clone());
+
+        return clone;
+    }
 }

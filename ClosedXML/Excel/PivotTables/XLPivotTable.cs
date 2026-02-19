@@ -219,7 +219,8 @@ namespace ClosedXML.Excel
             newPivotTable.ShowRowStripes = ShowRowStripes;
             newPivotTable.ShowColumnStripes = ShowColumnStripes;
             newPivotTable.Theme = Theme;
-            // TODO: Copy Styleformats
+            foreach (var format in Formats)
+                newPivotTable.AddFormat(format.Clone());
 
             return newPivotTable;
         }

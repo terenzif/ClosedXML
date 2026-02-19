@@ -56,4 +56,22 @@ internal class XLPivotReference
         // TODO: Check value by area.CacheIndex and ByPosition
         _fieldItems.Add(fieldItem);
     }
+
+    internal XLPivotReference Clone()
+    {
+        var clone = new XLPivotReference
+        {
+            Field = Field,
+            Selected = Selected,
+            ByPosition = ByPosition,
+            Relative = Relative
+        };
+        foreach (var item in FieldItems)
+            clone.AddFieldItem(item);
+
+        foreach (var subtotal in Subtotals)
+            clone.Subtotals.Add(subtotal);
+
+        return clone;
+    }
 }
