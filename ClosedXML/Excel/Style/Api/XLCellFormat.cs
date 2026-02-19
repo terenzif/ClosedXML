@@ -584,7 +584,7 @@ internal partial class XLCellFormat
         var styles = _workbook.Styles;
         if (DefaultFormat)
         {
-            styles.DefaultFormat = modifyFormat(styles.DefaultFormat);
+            styles.SetDefaultFormat(modifyFormat(styles.GetDefaultFormat()));
             foreach (var worksheet in _workbook.WorksheetsInternal)
             {
                 ApplyToWorksheet(worksheet, modifyFormat, styles);
@@ -636,7 +636,7 @@ internal partial class XLCellFormat
 
     private static void ApplyToWorksheet(XLWorksheet worksheet, Func<XLCellFormatValue, XLCellFormatValue> modifyFormat, XLWorkbookStyles styles)
     {
-        var originalFormat = worksheet.FormatValue ?? styles.DefaultFormat;
+        var originalFormat = worksheet.FormatValue ?? styles.GetDefaultFormat();
         var modifiedFormat = modifyFormat(originalFormat);
         worksheet.FormatValue = modifiedFormat;
 
@@ -654,7 +654,7 @@ internal partial class XLCellFormat
     private static void ApplyColRowFormat(IXLFormatContainer rowOrCol, Func<XLCellFormatValue, XLCellFormatValue> modifyFormat, XLWorksheet worksheet)
     {
         if (rowOrCol.FormatValue is not { } originalFormat)
-            originalFormat = worksheet.FormatValue ?? worksheet.Workbook.Styles.DefaultFormat;
+            originalFormat = worksheet.FormatValue ?? worksheet.Workbook.Styles.GetDefaultFormat();
 
         rowOrCol.FormatValue = modifyFormat(originalFormat);
     }

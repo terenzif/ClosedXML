@@ -947,7 +947,7 @@ namespace ClosedXML.Excel
                         return false;
 
                     // TODO Styles: Think about empty detection. Original is pretty suss, document if necessary
-                    var defaultFormat = Worksheet.Workbook.Styles.DefaultFormat;
+                    var defaultFormat = Worksheet.Workbook.Styles.GetDefaultFormat();
                     if (defaultFormat != format)
                         return false;
                 }

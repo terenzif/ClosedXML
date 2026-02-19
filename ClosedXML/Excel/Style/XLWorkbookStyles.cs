@@ -170,8 +170,7 @@ internal class XLWorkbookStyles
     /// Nearly all props are equivalent of "zero", except things that can't be like that, e.g. font
     /// name or font size.
     /// </summary>
-    // TODO: Make private and use GetDefaultFormat
-    internal XLCellFormatValue DefaultFormat { get; set; } = new()
+    private XLCellFormatValue _defaultFormat = new()
     {
         Font = new XLFontFormatValue
         {
@@ -216,6 +215,11 @@ internal class XLWorkbookStyles
         PivotButton = false,
         CustomFormat = CellFormatComponents.None
     };
+
+
+    internal XLCellFormatValue GetDefaultFormat() => _defaultFormat;
+
+    internal void SetDefaultFormat(XLCellFormatValue value) => _defaultFormat = value;
 
     internal XLNumberFormatValue GetNumberFormat(int numberFormatId)
     {
@@ -384,7 +388,7 @@ internal class XLWorkbookStyles
 
         var defaultFormat = XLCellFormatValue.FromStyle(0, normalStyle);
         styles.AddFormat(defaultFormat);
-        styles.DefaultFormat = defaultFormat;
+        styles._defaultFormat = defaultFormat;
 
         return styles;
     }

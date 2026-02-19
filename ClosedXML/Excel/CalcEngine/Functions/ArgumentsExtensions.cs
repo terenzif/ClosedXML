@@ -69,7 +69,7 @@ namespace ClosedXML.Excel.CalcEngine.Functions
                 {
                     var valuesIterator = collection.TryPickT0(out var array, out var reference)
                         ? array!
-                        : reference!.GetCellsValues(ctx);
+                        : ctx.GetNonBlankValues(reference!);
                     foreach (var value in valuesIterator)
                     {
                         if (collectionFilter is not null && !collectionFilter(value))

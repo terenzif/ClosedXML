@@ -88,7 +88,7 @@ internal partial class StylesReader
             _styles.AddFormat(defaultFormat);
         }
 
-        _styles.DefaultFormat = defaultFormat;
+        _styles.SetDefaultFormat(defaultFormat);
     }
 
     private void ParseStylesheet(string elementName)

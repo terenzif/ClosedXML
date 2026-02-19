@@ -114,6 +114,8 @@ namespace ClosedXML.Excel
             return parsedElements;
         }
 
+        private static readonly XLHFOccurrence[] _occurrences = (XLHFOccurrence[])Enum.GetValues(typeof(XLHFOccurrence));
+
         private Dictionary<XLHFOccurrence, String> _initialTexts;
 
         private Boolean _changed;
@@ -129,7 +131,7 @@ namespace ClosedXML.Excel
         internal void SetAsInitial()
         {
             _initialTexts = new Dictionary<XLHFOccurrence, string>();
-            foreach (var o in Enum.GetValues(typeof(XLHFOccurrence)).Cast<XLHFOccurrence>())
+            foreach (var o in _occurrences)
             {
                 _initialTexts.Add(o, GetText(o));
             }
