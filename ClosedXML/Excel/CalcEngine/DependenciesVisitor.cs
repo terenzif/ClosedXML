@@ -1,7 +1,9 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using ClosedXML.Extensions;
+using ClosedXML.Parser;
 
 namespace ClosedXML.Excel.CalcEngine
 {
@@ -318,8 +320,158 @@ namespace ClosedXML.Excel.CalcEngine
 
         public List<XLBookArea>? Visit(DependenciesContext context, StructuredReferenceNode node)
         {
-            // TODO: Structured reference should be evaluated into a reference and propagated.
-            return null;
+            // We don't support external links
+            if (node.Prefix is not null)
+                return null;
+
+            var firstColumn = node.FirstColumn;
+            var lastColumn = node.LastColumn;
+            var areaType = node.Area;
+
+            if (firstColumn?.StartsWith("@") == true)
+            {
+                firstColumn = firstColumn.Substring(1);
+                areaType = StructuredReferenceArea.ThisRow;
+            }
+            if (lastColumn?.StartsWith("@") == true)
+            {
+                lastColumn = lastColumn.Substring(1);
+                areaType = StructuredReferenceArea.ThisRow;
+            }
+
+            if (!TryGetTable(context, node.Table, out var table))
+                return null;
+
+            var area = table.Area;
+            if (!TryGetColumn(table, firstColumn, area.LeftColumn, out var colStart))
+                return null;
+
+            if (!TryGetColumn(table, lastColumn, area.RightColumn, out var colEnd))
+                return null;
+
+            if (colStart > colEnd)
+                (colEnd, colStart) = (colStart, colEnd);
+
+            // Row range is always continuous, so the result is an area. [[#Header],[#Totals]] is
+            // not allowed by grammar.
+            if (!TryGetRows(context, table, areaType, out var rowStart, out var rowEnd))
+                return null;
+
+            var range = new XLSheetRange(rowStart, colStart, rowEnd, colEnd);
+            return new List<XLBookArea> { new(table.Worksheet.Name, range) };
+
+            static bool TryGetTable(DependenciesContext context, string? tableName, [NotNullWhen(true)] out XLTable? table)
+            {
+                // table-less references are allowed only in a table area. Excel doesn't allow
+                // to set it in GUI, but interprets such situation as #REF!.
+                if (tableName is not null)
+                {
+                    return context.Workbook.TryGetTable(tableName, out table);
+                }
+
+                if (!context.Workbook.TryGetWorksheet(context.FormulaArea.Name, out XLWorksheet sheet))
+                {
+                    table = null;
+                    return false;
+                }
+
+                // Avoid LINQ allocation.
+                var formulaPoint = context.FormulaArea.Area.FirstPoint;
+                foreach (var sheetTable in sheet.Tables)
+                {
+                    var concreteTable = (XLTable)sheetTable;
+                    if (concreteTable.Area.Contains(formulaPoint))
+                    {
+                        table = concreteTable;
+                        return true;
+                    }
+                }
+
+                table = null;
+                return false;
+            }
+
+            static bool TryGetColumn(XLTable table, string? column, int defaultColumn, out int columnNo)
+            {
+                if (column is null)
+                {
+                    columnNo = defaultColumn;
+                    return true;
+                }
+
+                if (!table.FieldNames.TryGetValue(column, out var field))
+                {
+                    columnNo = default;
+                    return false;
+                }
+
+                columnNo = field.Index + table.Area.LeftColumn;
+                return true;
+            }
+
+            static bool TryGetRows(DependenciesContext context, XLTable table, StructuredReferenceArea tableArea,
+                out int rowStartNo, out int rowEndNo)
+            {
+                var area = table.Area;
+                var dataEndRowNo = table.ShowTotalsRow ? area.BottomRow - 1 : area.BottomRow;
+                switch (tableArea)
+                {
+                    case StructuredReferenceArea.None:
+                    case StructuredReferenceArea.Data:
+                        rowStartNo = area.TopRow + 1;
+                        rowEndNo = dataEndRowNo;
+                        break;
+                    case StructuredReferenceArea.Headers:
+                        rowStartNo = area.TopRow;
+                        rowEndNo = area.TopRow;
+                        break;
+                    case StructuredReferenceArea.Headers | StructuredReferenceArea.Data:
+                        rowStartNo = area.TopRow;
+                        rowEndNo = dataEndRowNo;
+                        break;
+                    case StructuredReferenceArea.Totals:
+                        var hasTotals = table.ShowTotalsRow;
+                        if (!hasTotals)
+                        {
+                            rowStartNo = rowEndNo = default;
+                            return false;
+                        }
+
+                        rowStartNo = area.BottomRow;
+                        rowEndNo = area.BottomRow;
+                        break;
+                    case StructuredReferenceArea.Totals | StructuredReferenceArea.Data:
+                        rowStartNo = area.TopRow + 1;
+                        rowEndNo = area.BottomRow;
+                        break;
+                    case StructuredReferenceArea.All:
+                        rowStartNo = area.TopRow;
+                        rowEndNo = area.BottomRow;
+                        break;
+                    case StructuredReferenceArea.ThisRow:
+                        var formulaTop = context.FormulaArea.Area.TopRow;
+                        var formulaBottom = context.FormulaArea.Area.BottomRow;
+                        var dataTop = area.TopRow + 1;
+                        var dataBottom = dataEndRowNo;
+
+                        var intersectTop = Math.Max(formulaTop, dataTop);
+                        var intersectBottom = Math.Min(formulaBottom, dataBottom);
+
+                        if (intersectTop > intersectBottom)
+                        {
+                            rowStartNo = rowEndNo = default;
+                            return false;
+                        }
+
+                        rowStartNo = intersectTop;
+                        rowEndNo = intersectBottom;
+                        break;
+                    default:
+                        throw new NotSupportedException($"Unexpected value {tableArea}.");
+                }
+
+                return true;
+            }
         }
 
         public List<XLBookArea> Visit(DependenciesContext context, PrefixNode node)
