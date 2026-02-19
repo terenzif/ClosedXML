@@ -9,7 +9,12 @@ namespace ClosedXML.Excel
     {
         public static XDocument? Load(Stream stream)
         {
-            using (XmlReader reader = XmlReader.Create(stream))
+            var settings = new XmlReaderSettings
+            {
+                DtdProcessing = DtdProcessing.Prohibit,
+                XmlResolver = null
+            };
+            using (XmlReader reader = XmlReader.Create(stream, settings))
             {
                 try
                 {

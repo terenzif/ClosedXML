@@ -1,4 +1,4 @@
-﻿#nullable disable
+#nullable disable
 
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Vml.Office;
@@ -10,6 +10,8 @@ using Vml = DocumentFormat.OpenXml.Vml;
 using System;
 using System.IO;
 using System.Text;
+using System.Xml.Linq;
+using System.Linq;
 using System.Xml;
 
 namespace ClosedXML.Excel.IO
@@ -24,7 +26,12 @@ namespace ClosedXML.Excel.IO
             {
                 XLWorkbook.CopyStream(stream, ms);
                 stream.Position = 0;
-                var writer = new XmlTextWriter(stream, Encoding.UTF8);
+                var settings = new XmlWriterSettings
+                {
+                    Encoding = Encoding.UTF8,
+                    OmitXmlDeclaration = true
+                };
+                using var writer = XmlWriter.Create(stream, settings);
 
                 writer.WriteStartElement("xml");
 
@@ -62,13 +69,18 @@ namespace ClosedXML.Excel.IO
                 {
                     ms.Position = 0;
                     var xdoc = XDocumentExtensions.Load(ms);
-                    xdoc.Root.Elements().ForEach(e => writer.WriteRaw(e.ToString()));
-                    hasAnyVmlElements |= xdoc.Root.HasElements;
+                    if (xdoc != null)
+                    {
+                        foreach (var e in xdoc.Root.Elements())
+                        {
+                            e.WriteTo(writer);
+                        }
+                        hasAnyVmlElements |= xdoc.Root.HasElements;
+                    }
                 }
 
                 writer.WriteEndElement();
                 writer.Flush();
-                writer.Close();
 
                 return hasAnyVmlElements;
             }
